@@ -2,6 +2,7 @@ import csv
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+import time
 
 
 
@@ -48,11 +49,24 @@ def main():
     if b == []:
         b = generate_b(n)
 
+    start = time.time()
+
+
     x = spla.spsolve(A, b)
     res = np.linalg.norm(A.dot(x) - b)
+    end = time.time()
 
     print ('x: ', x)
     print ('Residuals: ', res)
+    print ('Time: ', end-start)
+
+
+'''
+    x = spla.bicg(A, b, rtol=0.05)
+    res = np.linalg.norm(A.dot(x) - b)
+'''
+
+
 
 if __name__ == "__main__":
     main()
