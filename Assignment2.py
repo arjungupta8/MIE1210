@@ -147,14 +147,16 @@ def solve_system(A, b):
     return phi_vec
 
 def phi_to_grid(phi_vec, Nx, Ny):
-    return phi_vec.reshape((Nx, Ny))
+    return phi_vec.reshape((Ny, Nx))
 
 def plot_phi(xc, yc, phi, title, fname):
     X, Y = np.meshgrid(xc, yc)
     fig, ax = plt.subplots(figsize=(8,6))
-    levels = np.linspace(phi.min(), phi.max(), 21) # 20 evenly-spaced colour bands over range
+    # levels = np.linspace(phi.min(), phi.max(), 21) # 20 evenly-spaced colour bands over range
+    levels = np.linspace (0, 100, 21)
+    ticks = np.linspace (0, 100, 11)
     cs = plt.contourf(X, Y, phi, levels=levels)
-    cbar = plt.colorbar(cs, ax=ax)
+    cbar = plt.colorbar(cs, ax=ax, ticks = ticks)
     cbar.set_label('Temperature: phi', fontsize = 11)
     ax.set_title(title, fontsize=12, fontweight='bold')
     ax.set_xlabel('x', fontsize=11)
@@ -166,7 +168,7 @@ def plot_phi(xc, yc, phi, title, fname):
     plt.close()
 
 def compute_error_norm(phi_coarse, x_c, y_c, phi_ref, x_ref, y_ref):
-    interp_func = RegularGridInterpolator( # interp2d was not working - apparently is no longer supported
+    interp_func = RegularGridInterpolator( # interp2d was not working - apparently it is no longer supported
         (y_ref, x_ref),
         phi_ref,
         method = 'cubic', # Cubic Interpolation
@@ -216,29 +218,38 @@ def convergence_study(Rx, Ry, save_dir='my_results'):
         xc, yc, phi = run_case(Nx, Ny, Rx, Ry, save_dir)
         results[(Nx,Ny)] = (xc,yc,phi)
         print(f'Ran {Nx} x {Ny}')
+        print(f'  phi.shape = {phi.shape}')  # ADD THIS
+        print(f'  xc.shape = {xc.shape}, yc.shape = {yc.shape}')  # ADD THIS
 
     finest = meshes[-1]
     xref, yref, phiref = results[finest]
     norms = {}
 
-    for i_mesh in range(len(meshes)-1):
-        Nc = meshes[i_mesh]
-        Nf = meshes[i_mesh+1]
-        xc, yc, phic = results[Nc]
-        xf, yf, phif = results[Nf]
+    Nc = meshes[0]
+    Nf = meshes[1]
+    xc, yc, phic = results[Nc]
+    xf, yf, phif = results[Nf]
 
-        ec = compute_error_norm(phic, xc, yc, phiref, xref, yref)
-        ef = compute_error_norm(phif, xf, yf, phiref, xref, yref)
+    ec = compute_error_norm(phic, xc, yc, phiref, xref, yref)
+    ef = compute_error_norm(phif, xf, yf, phiref, xref, yref)
 
-        hx_c = Lx / Nc[0]
-        hx_f = Lx / Nf[0]
-        order = np.log(ec/ef) / np.log(hx_c/hx_f)
-        norms[(Nc, Nf)] = (ec, ef, order)
-        print(f"\nCoarse: {Nc[0]}×{Nc[1]}, h = {hx_c:.6f}")
-        print(f"Fine:   {Nf[0]}×{Nf[1]}, h = {hx_f:.6f}")
-        print(f"Error (coarse): {ec:.6e}")
-        print(f"Error (fine):   {ef:.6e}")
-        print(f"Order of convergence: {order:.4f}")
+    hx_c = Lx / Nc[0]
+    hx_f = Lx / Nf[0]
+
+    print(f"\nErrors:")
+    print(f'  ec = {ec:.10e}')
+    print(f'  ef = {ef:.10e}')
+    print(f'  Ratio ec/ef = {ec / ef:.4f}')
+    print(f'  hx_c = {hx_c:.6f}, hx_f = {hx_f:.6f}')
+    print(f'  Ratio hx_c/hx_f = {hx_c / hx_f:.4f}')
+
+    order = np.log(ec/ef) / np.log(hx_c/hx_f)
+    norms[(Nc, Nf)] = (ec, ef, order)
+    print(f"\nCoarse: {Nc[0]}×{Nc[1]}, h = {hx_c:.6f}")
+    print(f"Fine:   {Nf[0]}×{Nf[1]}, h = {hx_f:.6f}")
+    print(f"Error (coarse): {ec:.6e}")
+    print(f"Error (fine):   {ef:.6e}")
+    print(f"Order of convergence: {order:.4f}")
 
     os.makedirs(save_dir, exist_ok=True)
     summary_file = os.path.join(save_dir, 'convergence_summary.txt')
@@ -255,13 +266,14 @@ def convergence_study(Rx, Ry, save_dir='my_results'):
         f.write(f"  phi_left = {phi_left}, phi_right = {phi_right}\n")
         f.write(f"  phi_ext = {phi_ext}\n\n")
 
-        for (Nc, Nf), (ec, ef, order) in norms.items():
-            f.write("-" * 70 + "\n")
-            f.write(f"Coarse mesh: {Nc[0]} x {Nc[1]}, h = {Lx / Nc[0]:.8f}\n")
-            f.write(f"Fine mesh:   {Nf[0]} x {Nf[1]}, h = {Lx / Nf[0]:.8f}\n")
-            f.write(f"Error (coarse): {ec:.10e}\n")
-            f.write(f"Error (fine):   {ef:.10e}\n")
-            f.write(f"Order of convergence: {order:.6f}\n\n")
+        Nc, Nf = meshes[0], meshes[1]
+        ec, ef, order = norms[(Nc, Nf)]
+        f.write("-" * 70 + "\n")
+        f.write(f"Coarse mesh: {Nc[0]} x {Nc[1]}, h = {Lx / Nc[0]:.8f}\n")
+        f.write(f"Fine mesh:   {Nf[0]} x {Nf[1]}, h = {Lx / Nf[0]:.8f}\n")
+        f.write(f"Error (coarse): {ec:.10e}\n")
+        f.write(f"Error (fine):   {ef:.10e}\n")
+        f.write(f"Order of convergence: {order:.6f}\n\n")
 
     print(f"\n{'=' * 70}")
     print(f"Results saved to: {summary_file}")
@@ -279,7 +291,7 @@ if __name__ == '__main__':
     print("\n" + "#" * 70)
     print("# PART 2: INFLATED GRID CONVERGENCE STUDY (r=1.2)")
     print("#" * 70)
-    convergence_study(Rx=1.2, Ry=1.2, save_dir='results_inflated')
+    convergence_study(Rx=1.1, Ry=1.1, save_dir='results_inflated')
 
     print("\n" + "=" * 70)
     print("ANALYSIS COMPLETE!")

@@ -2,7 +2,7 @@
 CONVERGENCE STUDY RESULTS
 ======================================================================
 
-Domain: 1.0 × 1.0
+Domain: 1.0 x 1.0
 Inflation factors: r_x = 1.0000, r_y = 1.0000
 Physical parameters:
   Gamma = 20.0
@@ -11,16 +11,9 @@ Physical parameters:
   phi_ext = 300.0
 
 ----------------------------------------------------------------------
-Coarse mesh: 80×80, h = 0.01250000
-Fine mesh:   160×160, h = 0.00625000
+Coarse mesh: 80 x 80, h = 0.01250000
+Fine mesh:   160 x 160, h = 0.00625000
 Error (coarse): 2.6460952083e-01
 Error (fine):   8.8673241653e-02
 Order of convergence: 1.577294
-
-----------------------------------------------------------------------
-Coarse mesh: 160×160, h = 0.00625000
-Fine mesh:   320×320, h = 0.00312500
-Error (coarse): 8.8673241653e-02
-Error (fine):   1.9131568998e-04
-Order of convergence: 8.856400
 
