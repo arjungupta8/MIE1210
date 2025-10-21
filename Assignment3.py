@@ -241,9 +241,9 @@ def run_case(nx, ny, ux, uy, scheme, savedir, case):
 
     return xc, yc, phi
 
-g
 
-if __name__ = 'main':
+
+if __name__ == 'main':
 
     print ("Part 2: Gamma = 0, ux = uy = 2: ")
     gamma = 0.0
