@@ -5,8 +5,6 @@ from scipy.interpolate import RegularGridInterpolator
 import matplotlib.pyplot as plt
 import os
 
-from Assignment2 import phi_left, assemble_system
-
 Lx = 1.0
 Ly = 1.0
 meshes = [(80,80), (160,160), (320,320)]
@@ -20,7 +18,6 @@ def constant_vel (ux, uy):
         return ux
     def uy_func(x, y):
         return uy
-
     return ux_func, uy_func
 
 
@@ -39,6 +36,7 @@ def index(i, j, nx):
 
 
 def assemble_system(nx, ny, ux_func, uy_func, scheme):
+    #main updates from A2
     xc, yc, dx, dy = build_grid(nx, ny)
     n = nx*ny # total number of nodes
     rows, cols, data = [], [], [] # row = row index of element, cols = column element, data = value
@@ -159,9 +157,69 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme):
                     rows.append(p)
                     cols.append(index(i+1,j,nx))
                     data.append(-ux_e / dx)
+                # West face: flux = ux_w * phi_upwind
+                if ux_w > 0:
+                    # Flow from W to P, use phi_W
+                    rows.append(p)
+                    cols.append(index(i-1,j,nx))
+                    data.append(ux_w / dx)
+                else:
+                    # Flow from P to W, use phi_P
+                    aP += ux_w / dx
+                # North face: flux = uy_n*phi_upwind
+                if uy_n > 0:
+                    # Flow from P to N, use phi_P
+                    aP -= uy_n / dy
+                else:
+                    # Flow from N to P, use phi_N
+                    rows.append(p)
+                    cols.append(index(i,j-1,nx))
+                    data.append(-uy_n/dy)
+                # South Face: flux = uy_s * phi_upwind
+                if uy_s > 0:
+                    # Flow from S to P, use phi_S
+                    rows.append(p)
+                    cols.append(index(i,j+1,nx))
+                    data.append(uy_s/dy)
+                else:
+                    # Flow from P to S, use phi_P
+                    aP += uy_s/dy
+
+                # Add Quick scheme here
+            rows.append(p)
+            cols.append(p)
+            data.append(aP)
+        A = sp.csr_matrix((data, (rows, cols)), shape=(n,n))
+        return A, b, xc, yc
+
+def solve_system(A, b):
+    # exact same function as A2
+    phi_vec = spla.spsolve(A, b)
+    return phi_vec
+
+def phi_to_grid(phi_vec, nx, ny):
+    # same function as A2
+    return phi_vec.reshape((ny,nx)) # Converts 1D solution vector to 2D grid
 
 
+def plot_phi(xc, yc, phi, title, fname):
 
+    # exact same function as A2
+    x, y = np.meshgrid(xc, yc)
+    fig, ax = plt.subplots(figsize=(8,6))
+    levels = np.linspace(phi.min(), phi.max(), 21)
+    ticks = np.linspace(0, 100, 11)
+    cs = plt.contourf(x, y, phi, levels=levels)
+    cbar = plt.colorbar(cs, ax=ax, ticks=ticks)
+    cbar.set_label('phi', fontsize=11)
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    ax.set_xlabel('x', fontsize=11)
+    ax.set_ylabel('y', fontsize=11)
+    ax.set_aspect('equal')
+    ax.grid(True, alpha=0.3, linestyle='--')
+    plt.tight_layout()
+    plt.savefig(fname, dpi=300, bbox_inches='tight')
+    plt.close()
 
 
 
@@ -170,10 +228,20 @@ def run_case(nx, ny, ux, uy, scheme, savedir, case):
     os.makedirs(savedir, exist_ok=True)
 
     A, b, xc, yc = assemble_system(nx, ny, ux, uy, scheme)
+    phi_vec = solve_system(A, b)
+    phi = phi_to_grid(phi_vec, nx, ny)
 
+    residual = np.linalg.norm (A @ phi_vec - b)
+    print (f" Residual: {residual:.3e}")
+    print (f" Solution Range:  [{phi.min():.4f}, {phi.max():.4f}")
 
+    title = f" {case} ({nx}x{ny}, {scheme}"
+    filename = os.path.join(savedir, f'{case}_{nx}x{ny}_{scheme}.png')
+    plot_phi(xc, yc, phi, title=title, fname=filename) # Don't need to plot for most tests, but oh well.
 
+    return xc, yc, phi
 
+g
 
 if __name__ = 'main':
 
