@@ -402,7 +402,9 @@ def compute_quick_correction(phi, nx, ny, dx, dy, ux_grid, uy_grid):
     for j in range(ny):
         for i in range(nx):
             if i == 0 or i == nx-1 or j==0 or j == ny-1:
+                # Skip Boundary cells
                 continue
+
             p = index(i, j, nx)
             corr = 0.0
 
@@ -431,7 +433,7 @@ def compute_quick_correction(phi, nx, ny, dx, dy, ux_grid, uy_grid):
                         corr -= ux_e * quick_correction / dx
             else:
                 # Flow from E to P to W (upwind is E)
-                if i >= 0 and i < nx - 2:
+                if i >= 0 and i < nx - 1:
                     phi_U = phi[j, i+1] # East cell - upwind
                     phi_D = phi[j,i] # current cell - downwind
                     if i < nx - 2:
@@ -445,13 +447,130 @@ def compute_quick_correction(phi, nx, ny, dx, dy, ux_grid, uy_grid):
                         quick_correction = 0.5 * psi * (phi_D - phi_UU) / 2.0
                         corr -= ux_e * quick_correction / dx
             # West Face
+            if ux_w > 0:
+                # Flow is from WW to W to P (upwind is W)
+                if i >= 2 and i < nx:
+                    # Far enough from Boundary
+                    phi_UU = phi[j, i-2] # Far west = far upwind
+                    phi_U = phi[j, i-1] # West cell = upwind
+                    phi_D = phi[j, i] # Current Cell = downwind
+                    denom = phi_D - phi_U
+                    if abs(denom) > 1e-12:
+                        r = (phi_U - phi_UU) / denom
+                        psi = (r + abs(r)) / (1.0 + r)
+                        quick_correction = 0.5 * psi * (phi_D - phi_UU) / 2.0
+                        corr += ux_w * quick_correction/dx
+            else:
+                # Flow is from P to W to WW (upwind is P)
+                if i >= 1:
+                    phi_U = phi[j, i] # Current cell = upwind
+                    phi_D = phi[j, i-1] # West cell = downwind
+                    if i+1 < nx:
+                        # Check that the East Cell Exists
+                        phi_UU = phi[j, i+1] # East cell = far upwind
+                    else:
+                        phi_UU = phi_U # If east cell does not, just do standard upwind
+                    denom = phi_D - phi_U
+                    if abs(denom) > 1e-12:
+                        r = (phi_U - phi_UU) / denom
+                        psi = (r + abs(r)) / (1.0 + r)
+                        quick_correction = 0.5 * psi * (phi_D - phi_UU) / 2.0
+                        corr += ux_w * quick_correction / dx
+            # North Face
+            if uy_n > 0:
+                # Flow from S to P to N (upwind is P)
+                if j >= 1 and j < ny - 1:
+                    phi_UU = phi[j-1, i] # South Cell = far upwind
+                    phi_U = phi[j, i] # Current Cell = upwind
+                    phi_D = phi[j+1, i] # North cell = downwind
+                    denom = phi_D - phi_U
+                    if abs(denom) > 1e-12:
+                        r = (phi_U - phi_UU) / denom
+                        psi = (r + abs(r)) / (1.0 + r)
+                        quick_correction = 0.5 * psi * (phi_D - phi_UU) / 2.0
+                        corr -= uy_n * quick_correction / dy
+            else:
+                # Flow is from N to P to S (upwind is N)
+                if j>= 0 and j < ny-1:
+                    phi_U = phi[j+1, i] # North Cell (upwind)
+                    phi_D = phi[j,i]
+                    if j < ny-2:
+                        # If far enough away from boundary, use far north cell = far upwind
+                        phi_UU = phi[j+2, i]
+                    else: # Else standard upwind
+                        phi_UU = phi_U
+                    denom = phi_D - phi_U
+                    if abs(denom) > 1e-12:
+                        r = (phi_U - phi_UU) / denom
+                        psi = (r + abs(r)) / (1.0 + r)
+                        quick_correction = 0.5 * psi * (phi_D - phi_UU) / 2.0
+                        corr -= uy_n * quick_correction / dy
+            # South Face
+            if uy_s > 0:
+                # Flow is from SS to S to P (upwind is S)
+                if j >= 2:
+                    phi_UU = phi[j-2, i] # Far south cell = far upwind
+                    phi_U = phi[j-1, i] # South Cell = upwind
+                    phi_D = phi[j,i] # Current Cell = downwind
+                    denom = phi_D - phi_U
+                    if abs(denom) > 1e-12:
+                        r = (phi_U - phi_UU) / denom
+                        psi = (r + abs(r)) / (1.0 + r)
+                        quick_correction = 0.5 * psi * (phi_D - phi_UU) / 2.0
+                        corr += uy_s * quick_correction / dy
+            else:
+                # Flow is from P to S to SS (upwind is P
+                if j >= 1:
+                    phi_U = phi[j, i] # Current cell =upwind
+                    phi_D = phi[j-1, i]
+                    if j < ny-1: # Ensure that the north cell does exist
+                        phi_UU = phi[j+1, i]
+                    else:
+                        phi_UU = phi_U # Otherwise just use standard upwind
+                    denom = phi_D - phi_U
+                    if abs(denom) > 1e-12:
+                        r = (phi_U - phi_UU) / denom
+                        psi = (r + abs(r)) / (1.0 + abs(r))
+                        quick_correction = 0.5 * psi * (phi_D - phi_UU) / 2.0
+                        corr += uy_s * quick_correction / dy
+            correction[p] = corr
+    return correction
 
 
+def solve_with_quick_iterations(nx, ny, ux_func, uy_func, gamma):
+    # Solve Quick scheme with iterative deferred correction.
+    # Will Assemble upwind matrix A and RHS matrix b,
+    # Compute QUICK correction
+    # Update RHS: b_new = b + correction
+    # Solve A*phi_new = b_new
+    # Repeat until converged
 
-
-
-def solve_with_quick_iterations():
+    max_iter = 25 # Max number of iterations to solve
+    tol = 1e-6 # Tolerance of convergence (if less than max iterations)
     xc, yc, dx, dy = build_grid(nx, ny)
+    x, y = np.meshgrid(xc, yc)
+    ux_grid = ux_func(x, y)
+    uy_grid = uy_func(x, y)
+    A, b_base, _, _ = assemble_system(nx, ny, ux_func, uy_func, 'quick', gamma)
+
+    phi_vec = solve_system(A, b_base)
+    phi = phi_to_grid(phi_vec, nx, ny)
+
+    for iteration in range(max_iter):
+        correction = compute_quick_correction(phi, nx, ny, dx, dy, ux_grid, uy_grid)
+        b_corrected = b_base + correction
+        phi_vec_new = solve_system(A, b_corrected)
+        phi_new = phi_to_grid(phi_vec_new, nx, ny)
+        change = np.max(np.abs(phi_new - phi)) # Check convergence
+        print (f" QUICK iteration {iteration + 1}: max change = {change:.6e}")
+        if change < tol:
+            print (f"QUICK converged in {iteration + 1} iterations")
+            return xc, yc, phi_new, iteration + 1
+        phi = phi_new
+        phi_vec = phi_vec_new
+
+    print (f" QUICK reached max iterations ({max_iter}")
+    return xc, yc, phi, max_iter
 
 
 
@@ -638,7 +757,13 @@ if __name__ == "__main__":
     print(f"Central Difference - Order of Convergence: {order_central:.4f}")
     print(f"Upwind - Order of Convergence: {order_upwind:.4f}")
 
-
+    print ("BONUS: Gamma = 5, ux = rsin(theta), uy = rcos(theta), QUICK Scheme: ")
+    # can use the same gamma value
+    # can use the same velocity functions
+    case = f'bonus_rotational_vel_gamma5'
+    savedir = f'a3_results_bonus'
+    order_quick = convergence_study(ux_func, uy_func, 'quick', savedir, case, gamma)
+    print (f" Bonus QUICK - Order of Convergence: {order_quick:.4f}")
 
 
 
