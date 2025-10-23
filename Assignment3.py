@@ -162,7 +162,8 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                 # East face: flux = ux_e * phi_upwind
                 if ux_e > 0:
                     # Flow from P to E, use phi_P
-                    aP -= ux_e / dx
+                    #aP -= ux_e / dx
+                    aP += ux_e / dx
                 else:
                     # Flow from E to P, use phi_E
                     rows.append(p)
@@ -173,14 +174,16 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                     # Flow from W to P, use phi_W
                     rows.append(p)
                     cols.append(index(i-1,j,nx))
-                    data.append(ux_w / dx)
+                    #data.append(ux_w / dx)
+                    data.append(-ux_w / dx)
                 else:
                     # Flow from P to W, use phi_P
                     aP += ux_w / dx
                 # North face: flux = uy_n*phi_upwind
                 if uy_n > 0:
                     # Flow from P to N, use phi_P
-                    aP -= uy_n / dy
+                    #aP -= uy_n / dy
+                    aP += uy_n / dy
                 else:
                     # Flow from N to P, use phi_N
                     rows.append(p)
@@ -191,7 +194,8 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                     # Flow from S to P, use phi_S
                     rows.append(p)
                     cols.append(index(i,j+1,nx))
-                    data.append(uy_s/dy)
+                    #data.append(uy_s/dy)
+                    data.append(-uy_s / dy)
                 else:
                     # Flow from P to S, use phi_P
                     aP += uy_s/dy
@@ -203,7 +207,8 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                 # East face: flux = ux_e * phi_upwind
                 if ux_e > 0:
                     # Flow from P to E, use phi_P
-                    aP -= ux_e / dx
+                    # aP -= ux_e / dx
+                    aP += ux_e / dx
                 else:
                     # Flow from E to P, use phi_E
                     rows.append(p)
@@ -214,14 +219,16 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                     # Flow from W to P, use phi_W
                     rows.append(p)
                     cols.append(index(i - 1, j, nx))
-                    data.append(ux_w / dx)
+                    # data.append(ux_w / dx)
+                    data.append(-ux_w / dx)
                 else:
                     # Flow from P to W, use phi_P
                     aP += ux_w / dx
                 # North face: flux = uy_n*phi_upwind
                 if uy_n > 0:
                     # Flow from P to N, use phi_P
-                    aP -= uy_n / dy
+                    #aP -= uy_n / dy
+                    aP += uy_n / dy
                 else:
                     # Flow from N to P, use phi_N
                     rows.append(p)
@@ -232,152 +239,11 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                     # Flow from S to P, use phi_S
                     rows.append(p)
                     cols.append(index(i, j + 1, nx))
-                    data.append(uy_s / dy)
+                    #data.append(uy_s / dy)
+                    data.append(-uy_s / dy)
                 else:
                     # Flow from P to S, use phi_P
                     aP += uy_s / dy
-
-                # Now implement standard QUICK
-                # x-direction
-                # East face
-                if ux_e > 0:
-                    # Flow from P to E, reconstruction point is P
-                    if i >= 1:
-                        rows.append(p)
-                        cols.append(index(i-1, j, nx))
-                        data.append(ux_e / (8.0 * dx)) # -1/8 from phi_W
-                        aP -= (6.0 * ux_e) / (8.0 * dx)  # 6/8 from phi_P
-                        rows.append(p)
-                        cols.append(index(i+1, j, nx))
-                        data.append((3.0 * -ux_e) / (8.0 * dx)) # 3.8 from phi_E
-                    else:
-                        aP -= ux_e / dx # Boundary Handling, use upwind. Easier, ensures non-negative contributions
-                else:
-                    # Flow from E to P, reconstruction point is E
-                    if i <= nx - 2:
-                        rows.append(p)
-                        cols.append(index(i+1, j, nx))
-                        data.append((-6.0 * ux_e) / (8.0 * dx)) # 6/8 from phi_E
-                        aP += (3.0 * ux_e) / (8.0 * dx) # 3/8 from phi_P
-                        if i <= nx - 3:
-                            # if far enough from boundary, can maintain third-order accuracy
-                            rows.append(p)
-                            cols.append(index(i+2, j, nx))
-                            data.append(ux_e / (8.0 * dx)) # -1/8 from phi_EE
-                        else:
-                            # Else adjust to second-order for that one node
-                            rows.append(p)
-                            cols.append(index(i+1, j, nx))
-                            data.append((-3.0 * ux_e) / (8.0 * dx))
-                    else:
-                        # Too close to boundary, use upwind
-                        rows.append(p)
-                        cols.append(index(i+1, j, nx))
-                        data.append(-ux_e / dx)
-
-                # West face
-                if ux_w > 0:
-                    # Flow from W to P, reconstruction point is W
-                    if i >= 2:
-                        # Far enough from boundary, use QUICK
-                        rows.append(p)
-                        cols.append(index(i-1, j, nx))
-                        data.append((6.0 * ux_w) / (8.0 * dx)) # 6/8 from phi_W
-                        aP -= (3.0 * ux_w) / (8.0 * dx) # 3/8 from phi_P
-                        rows.append(p)
-                        cols.append(index(i-2, j, nx))
-                        data.append(-ux_w / (8.0 * dx)) # -1/8 from phi_WW
-                    else:
-                        # Too close to boundary, fall back to upwind
-                        rows.append(p)
-                        cols.append(index(i-1, j, nx))
-                        data.append(ux_w / dx)
-                else:
-                    # Flow from P to W, reconstruction point is P
-                    if i >= 1:
-                        aP += ux_w * 6.0 / (8.0 * dx) # 6/8 from phi_P
-                        rows.append(p)
-                        cols.append(index(i-1, j, nx))
-                        data.append((-3.0 * ux_w) / (8.0 * dx)) # 3/8 from phi_W
-
-                        if i <= nx-2:
-                            rows.append(p)
-                            cols.append(index(i+1, j, nx))
-                            data.append(ux_w / (8.0 * dx)) # -1/8 from phi_E
-                        else:
-                            rows.append(p)
-                            cols.append(index(i-1, j, nx))
-                            data.append((-3.0 * ux_w) / (8.0 * dx))
-                    else:
-                        aP += ux_w / dx
-
-                # y-direction
-                # North Face
-                if uy_n > 0:
-                    # Flow from P to N, reconstruction point is P
-                    if j >= 1:
-                        rows.append(p)
-                        cols.append(index(i, j-1, nx))
-                        data.append(uy_n / (8.0 * dy)) # -1/8 from phi_S
-                        aP -= (6.0 * uy_n) / (8.0 * dy) # 6/8 from phi_P
-                        rows.append(p)
-                        cols.append(index(i, j+1, nx))
-                        data.append((-3.0 * uy_n) / (8.0 * dy))
-                    else: # Too close to boundary
-                        aP -= uy_n / dy
-                else:
-                    # From from N to P, reconstruction point is N
-                    if j <= ny-2:
-                        rows.append(p)
-                        cols.append(index(i, j+1, nx))
-                        data.append((-6.0 * uy_n) / (8.0 * dy)) # 6/8 from phi_N
-                        aP += (3.0 * uy_n) / (8.0 * dy)
-                        if j <= ny - 3: # too close to boundary, cannot use NN accurately
-                            rows.append(p)
-                            cols.append(index(i, j+2, nx))
-                            data.append(uy_n / (8.0 * dy)) # -1/8 from phi_NN
-                        else:
-                            rows.append(p)
-                            cols.append(index(i, j+1, nx))
-                            data.append((-3.0 * uy_n) / (8.0 * dy))
-                    else:
-                        # Use upwind when too close to the boundary
-                        rows.append(p)
-                        cols.append(index(i, j+1, nx))
-                        data.append(-uy_n / dy)
-                if uy_s > 0:
-                    # Flow from S to P, reconstruction point is S
-                    if j >= 2:
-                        rows.append(p)
-                        cols.append(index(i, j-1, nx))
-                        data.append((6.0 * uy_s) / (8.0 * dy)) # 6/8 from phi_S
-                        aP -= (3.0 * uy_s) / (8.0 * dy) # 3/8 from phi_P
-                        rows.append(p)
-                        cols.append(index(i, j-2, nx))
-                        data.append(-uy_s / (8.0 * dy)) # from -1/8 from phi_SS
-                    else:
-                        rows.append(p)
-                        cols.append(index(i, j-1, nx))
-                        data.append(uy_s / dy)
-                else:
-                    # Flow from P to S, reconstruction point is P
-                    if j >= 1:
-                        aP += (6.0 * uy_s) / (8.0 * dy) # 6/8 from phi_P
-                        rows.append(p)
-                        cols.append(index(i, j-1, nx))
-                        data.append((-3.0 * uy_s) / (8.0 * dy)) # 3/8 from phi_S
-
-                        if j <= ny - 2:
-                            rows.append(p)
-                            cols.append(index(i, j+1, nx))
-                            data.append(uy_s / (8.0 * dy)) # -1/8 from phi_N
-                        else:
-                            # Adjust near boundary
-                            rows.append(p)
-                            cols.append(index(i, j-1, nx))
-                            data.append((-3.0 * uy_s) / (8.0 * dy))
-                    else:
-                        aP += uy_s / dy
 
             # Add diagonal coefficient
             rows.append(p)
@@ -674,11 +540,26 @@ def run_case(nx, ny, ux, uy, scheme, savedir, case, gamma):
     print(f"Running {case}: {nx}x{ny} grid, {scheme} scheme...")
     os.makedirs(savedir, exist_ok=True)
 
-    A, b, xc, yc = assemble_system(nx, ny, ux, uy, scheme, gamma)
-    phi_vec = solve_system(A, b)
-    phi = phi_to_grid(phi_vec, nx, ny)
+    if scheme == 'quick':
+        # solve quick with the dedicated iterative solver
+        xc, yc, phi, n_iter = solve_with_quick_iterations(nx, ny, ux, uy, gamma)
+        # Compute the residual value, and make the new A, b matrices for order of convergence calculations
+        A, b_base, _, _ = assemble_system(nx, ny, ux, uy, scheme, gamma)
+        x, y = np.meshgrid(xc, yc)
+        ux_grid = ux_func(x,y)
+        uy_grid = uy_func(x,y)
+        dx = Lx / nx
+        dy = Ly / ny
+        correction = compute_quick_correction(phi, nx, ny, dx, dy, ux_grid, uy_grid)
+        b = b_base + correction
+        phi_vec = phi.ravel()
+        residual = np.linalg.norm(A @ phi_vec - b)
+    else:
+        A, b, xc, yc = assemble_system(nx, ny, ux, uy, scheme, gamma)
+        phi_vec = solve_system(A, b)
+        phi = phi_to_grid(phi_vec, nx, ny)
+        residual = np.linalg.norm (A @ phi_vec - b)
 
-    residual = np.linalg.norm (A @ phi_vec - b)
     print (f" Residual: {residual:.3e}")
     print (f" Solution Range:  [{phi.min():.4f}, {phi.max():.4f}]")
 
@@ -741,9 +622,11 @@ if __name__ == "__main__":
     nx, ny = 160, 160
     xc_c, yc_c, phi_c = run_case(nx, ny, ux_func, uy_func, 'central', savedir=savedir,case=case, gamma=gamma)
     s_c, phi_diag_c = extract_diagonal_profile(xc_c, yc_c, phi_c, nx, ny)
+    #plot_vel_field(xc_c, yc_c, ux_func, uy_func, savedir, case, 'central', nx, ny)
 
     xc_u, yc_u, phi_u = run_case(nx, ny, ux_func, uy_func, 'upwind', savedir=savedir, case=case, gamma=gamma)
     s_u, phi_diag_u = extract_diagonal_profile(xc_u, yc_u, phi_u, nx, ny)
+    #plot_vel_field(xc_u, yc_u, ux_func, uy_func, savedir, case, 'upwind', nx, ny)
 
     plot_comparison(s_c, phi_diag_c, s_u, phi_diag_u, nx, ny, savedir=savedir, case=case, gamma=gamma)
 
