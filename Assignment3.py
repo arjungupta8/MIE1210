@@ -93,9 +93,6 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                 data.append(1.0)
                 b[p] = phiTop
                 continue
-            # Interior Cells
-            # ux_p = ux_grid[j, i]
-            # uy_p = uy_grid[j, i]
 
             # Diffusion Terms (RHS of the equation)
             # Always uses central differencing as diffusion is symmetric
@@ -162,7 +159,6 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                 # East face: flux = ux_e * phi_upwind
                 if ux_e > 0:
                     # Flow from P to E, use phi_P
-                    #aP -= ux_e / dx
                     aP += ux_e / dx
                 else:
                     # Flow from E to P, use phi_E
@@ -174,7 +170,6 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                     # Flow from W to P, use phi_W
                     rows.append(p)
                     cols.append(index(i-1,j,nx))
-                    #data.append(ux_w / dx)
                     data.append(-ux_w / dx)
                 else:
                     # Flow from P to W, use phi_P
@@ -182,7 +177,6 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                 # North face: flux = uy_n*phi_upwind
                 if uy_n > 0:
                     # Flow from P to N, use phi_P
-                    #aP -= uy_n / dy
                     aP += uy_n / dy
                 else:
                     # Flow from N to P, use phi_N
@@ -194,7 +188,6 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                     # Flow from S to P, use phi_S
                     rows.append(p)
                     cols.append(index(i,j+1,nx))
-                    #data.append(uy_s/dy)
                     data.append(-uy_s / dy)
                 else:
                     # Flow from P to S, use phi_P
@@ -207,7 +200,6 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                 # East face: flux = ux_e * phi_upwind
                 if ux_e > 0:
                     # Flow from P to E, use phi_P
-                    # aP -= ux_e / dx
                     aP += ux_e / dx
                 else:
                     # Flow from E to P, use phi_E
@@ -219,7 +211,6 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                     # Flow from W to P, use phi_W
                     rows.append(p)
                     cols.append(index(i - 1, j, nx))
-                    # data.append(ux_w / dx)
                     data.append(-ux_w / dx)
                 else:
                     # Flow from P to W, use phi_P
@@ -227,7 +218,6 @@ def assemble_system(nx, ny, ux_func, uy_func, scheme, gamma):
                 # North face: flux = uy_n*phi_upwind
                 if uy_n > 0:
                     # Flow from P to N, use phi_P
-                    #aP -= uy_n / dy
                     aP += uy_n / dy
                 else:
                     # Flow from N to P, use phi_N
