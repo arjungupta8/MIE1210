@@ -152,11 +152,11 @@ def phi_to_grid(phi_vec, Nx, Ny):
 def plot_phi(xc, yc, phi, title, fname):
     X, Y = np.meshgrid(xc, yc)
     fig, ax = plt.subplots(figsize=(8,6))
-    # levels = np.linspace(phi.min(), phi.max(), 21) # 20 evenly-spaced colour bands over range
-    levels = np.linspace (0, 100, 21)
-    ticks = np.linspace (0, 100, 11)
+    levels = np.linspace(phi.min(), phi.max(), 21) # 20 evenly-spaced colour bands over range
+    # levels = np.linspace (0, 100, 21)
+    #ticks = np.linspace (0, 1, 11)
     cs = plt.contourf(X, Y, phi, levels=levels)
-    cbar = plt.colorbar(cs, ax=ax, ticks = ticks)
+    cbar = plt.colorbar(cs, ax=ax)
     cbar.set_label('Temperature: phi', fontsize = 11)
     ax.set_title(title, fontsize=12, fontweight='bold')
     ax.set_xlabel('x', fontsize=11)

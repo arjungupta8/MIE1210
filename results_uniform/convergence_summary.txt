@@ -6,14 +6,14 @@ Domain: 1.0 x 1.0
 Inflation factors: r_x = 1.0000, r_y = 1.0000
 Physical parameters:
   Gamma = 20.0
-  h_f = -10.0
+  h_f = 10.0
   phi_left = 10.0, phi_right = 100.0
   phi_ext = 300.0
 
 ----------------------------------------------------------------------
 Coarse mesh: 80 x 80, h = 0.01250000
 Fine mesh:   160 x 160, h = 0.00625000
-Error (coarse): 2.6198993882e-01
-Error (fine):   8.8025995617e-02
-Order of convergence: 1.573510
+Error (coarse): 2.6460952083e-01
+Error (fine):   8.8673241653e-02
+Order of convergence: 1.577294
 
