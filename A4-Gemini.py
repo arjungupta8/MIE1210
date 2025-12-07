@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import spsolve
 
+# THIS CODE WORKS FOR THE FIRST PROBLEM
+
 
 class Solver:
     def __init__(self, nx: int, ny: int, Re: float, problem_type: str):
@@ -16,10 +18,6 @@ class Solver:
         self.u = np.zeros((ny, nx))
         self.v = np.zeros((ny, nx))
         self.p = np.zeros((ny, nx))
-
-        # For Rhie-Chow interpolation
-        self.d_u = np.ones((ny, nx)) * 1e-10  # Momentum coefficient storage
-        self.d_v = np.ones((ny, nx)) * 1e-10
 
         # Conservative relaxation
         self.alpha_u = 0.7
@@ -48,167 +46,14 @@ class Solver:
         self.u[:, -1] = 0.0
         self.v[:, -1] = 0.0
 
-        # Zero d coefficients at boundaries
-        self.d_u[0, :] = 0.0
-        self.d_u[-1, :] = 0.0
-        self.d_u[:, 0] = 0.0
-        self.d_u[:, -1] = 0.0
-        self.d_v[0, :] = 0.0
-        self.d_v[-1, :] = 0.0
-        self.d_v[:, 0] = 0.0
-        self.d_v[:, -1] = 0.0
-
-    def _rhie_chow_u_face(self, j, i, face):
-        """
-        Rhie-Chow interpolation for u-velocity at cell faces
-        Prevents pressure-velocity decoupling
-        """
-        if face == 'east':
-            if i >= self.nx - 1:
-                return self.u[j, i]
-
-            # Average velocity
-            u_avg = 0.5 * (self.u[j, i] + self.u[j, i + 1])
-
-            # Average d coefficient
-            d_avg = 0.5 * (self.d_u[j, i] + self.d_u[j, i + 1])
-
-            # Pressure gradient at face (direct)
-            dp_dx_face = (self.p[j, i + 1] - self.p[j, i]) / self.dx
-
-            # Pressure gradients at cell centers (central difference)
-            dp_dx_P = (self.p[j, i + 1] - self.p[j, i - 1]) / (2 * self.dx) if i > 0 else 0
-            dp_dx_E = (self.p[j, i + 2] - self.p[j, i]) / (2 * self.dx) if i < self.nx - 2 else 0
-            dp_dx_avg = 0.5 * (dp_dx_P + dp_dx_E)
-
-            # Rhie-Chow correction
-            u_face = u_avg - d_avg * (dp_dx_face - dp_dx_avg)
-            return u_face
-
-        elif face == 'west':
-            if i <= 0:
-                return self.u[j, i]
-
-            u_avg = 0.5 * (self.u[j, i - 1] + self.u[j, i])
-            d_avg = 0.5 * (self.d_u[j, i - 1] + self.d_u[j, i])
-
-            dp_dx_face = (self.p[j, i] - self.p[j, i - 1]) / self.dx
-
-            dp_dx_W = (self.p[j, i] - self.p[j, i - 2]) / (2 * self.dx) if i > 1 else 0
-            dp_dx_P = (self.p[j, i + 1] - self.p[j, i - 1]) / (2 * self.dx) if i < self.nx - 1 else 0
-            dp_dx_avg = 0.5 * (dp_dx_W + dp_dx_P)
-
-            u_face = u_avg - d_avg * (dp_dx_face - dp_dx_avg)
-            return u_face
-
-        elif face == 'north':
-            if j >= self.ny - 1:
-                return self.u[j, i]
-
-            u_avg = 0.5 * (self.u[j, i] + self.u[j + 1, i])
-            d_avg = 0.5 * (self.d_u[j, i] + self.d_u[j + 1, i])
-
-            dp_dy_face = (self.p[j + 1, i] - self.p[j, i]) / self.dy
-
-            dp_dy_P = (self.p[j + 1, i] - self.p[j - 1, i]) / (2 * self.dy) if j > 0 else 0
-            dp_dy_N = (self.p[j + 2, i] - self.p[j, i]) / (2 * self.dy) if j < self.ny - 2 else 0
-            dp_dy_avg = 0.5 * (dp_dy_P + dp_dy_N)
-
-            u_face = u_avg - d_avg * (dp_dy_face - dp_dy_avg)
-            return u_face
-
-        elif face == 'south':
-            if j <= 0:
-                return self.u[j, i]
-
-            u_avg = 0.5 * (self.u[j - 1, i] + self.u[j, i])
-            d_avg = 0.5 * (self.d_u[j - 1, i] + self.d_u[j, i])
-
-            dp_dy_face = (self.p[j, i] - self.p[j - 1, i]) / self.dy
-
-            dp_dy_S = (self.p[j, i] - self.p[j - 2, i]) / (2 * self.dy) if j > 1 else 0
-            dp_dy_P = (self.p[j + 1, i] - self.p[j - 1, i]) / (2 * self.dy) if j < self.ny - 1 else 0
-            dp_dy_avg = 0.5 * (dp_dy_S + dp_dy_P)
-
-            u_face = u_avg - d_avg * (dp_dy_face - dp_dy_avg)
-            return u_face
-
-    def _rhie_chow_v_face(self, j, i, face):
-        """
-        Rhie-Chow interpolation for v-velocity at cell faces
-        """
-        if face == 'north':
-            if j >= self.ny - 1:
-                return self.v[j, i]
-
-            v_avg = 0.5 * (self.v[j, i] + self.v[j + 1, i])
-            d_avg = 0.5 * (self.d_v[j, i] + self.d_v[j + 1, i])
-
-            dp_dy_face = (self.p[j + 1, i] - self.p[j, i]) / self.dy
-
-            dp_dy_P = (self.p[j + 1, i] - self.p[j - 1, i]) / (2 * self.dy) if j > 0 else 0
-            dp_dy_N = (self.p[j + 2, i] - self.p[j, i]) / (2 * self.dy) if j < self.ny - 2 else 0
-            dp_dy_avg = 0.5 * (dp_dy_P + dp_dy_N)
-
-            v_face = v_avg - d_avg * (dp_dy_face - dp_dy_avg)
-            return v_face
-
-        elif face == 'south':
-            if j <= 0:
-                return self.v[j, i]
-
-            v_avg = 0.5 * (self.v[j - 1, i] + self.v[j, i])
-            d_avg = 0.5 * (self.d_v[j - 1, i] + self.d_v[j, i])
-
-            dp_dy_face = (self.p[j, i] - self.p[j - 1, i]) / self.dy
-
-            dp_dy_S = (self.p[j, i] - self.p[j - 2, i]) / (2 * self.dy) if j > 1 else 0
-            dp_dy_P = (self.p[j + 1, i] - self.p[j - 1, i]) / (2 * self.dy) if j < self.ny - 1 else 0
-            dp_dy_avg = 0.5 * (dp_dy_S + dp_dy_P)
-
-            v_face = v_avg - d_avg * (dp_dy_face - dp_dy_avg)
-            return v_face
-
-        elif face == 'east':
-            if i >= self.nx - 1:
-                return self.v[j, i]
-
-            v_avg = 0.5 * (self.v[j, i] + self.v[j, i + 1])
-            d_avg = 0.5 * (self.d_v[j, i] + self.d_v[j, i + 1])
-
-            dp_dx_face = (self.p[j, i + 1] - self.p[j, i]) / self.dx
-
-            dp_dx_P = (self.p[j, i + 1] - self.p[j, i - 1]) / (2 * self.dx) if i > 0 else 0
-            dp_dx_E = (self.p[j, i + 2] - self.p[j, i]) / (2 * self.dx) if i < self.nx - 2 else 0
-            dp_dx_avg = 0.5 * (dp_dx_P + dp_dx_E)
-
-            v_face = v_avg - d_avg * (dp_dx_face - dp_dx_avg)
-            return v_face
-
-        elif face == 'west':
-            if i <= 0:
-                return self.v[j, i]
-
-            v_avg = 0.5 * (self.v[j, i - 1] + self.v[j, i])
-            d_avg = 0.5 * (self.d_v[j, i - 1] + self.d_v[j, i])
-
-            dp_dx_face = (self.p[j, i] - self.p[j, i - 1]) / self.dx
-
-            dp_dx_W = (self.p[j, i] - self.p[j, i - 2]) / (2 * self.dx) if i > 1 else 0
-            dp_dx_P = (self.p[j, i + 1] - self.p[j, i - 1]) / (2 * self.dx) if i < self.nx - 1 else 0
-            dp_dx_avg = 0.5 * (dp_dx_W + dp_dx_P)
-
-            v_face = v_avg - d_avg * (dp_dx_face - dp_dx_avg)
-            return v_face
-
     def solve(self, dt=0.001, max_steps=100000, check_interval=100, tolerance=1e-6):
         """
-        Fractional step method with Rhie-Chow interpolation
+        Fractional step method for incompressible Navier-Stokes
+        Much more stable than SIMPLE for beginners
         """
         print(f"Solving {self.problem_type} at Re={self.Re}")
         print(f"Grid: {self.nx}x{self.ny}")
         print(f"Time step: dt={dt}")
-        print(f"Using Rhie-Chow interpolation for momentum")
 
         self._apply_boundary_conditions()
 
@@ -218,11 +63,11 @@ class Solver:
             u_old = self.u.copy()
             v_old = self.v.copy()
 
-            # Step 1: Solve momentum with Rhie-Chow
-            u_star = self._solve_u_momentum_rhie_chow(dt, nu)
-            v_star = self._solve_v_momentum_rhie_chow(dt, nu)
+            # Step 1: Advection-diffusion (predict velocities)
+            u_star = self._solve_u_momentum(dt, nu)
+            v_star = self._solve_v_momentum(dt, nu)
 
-            # Step 2: Pressure correction
+            # Step 2: Pressure correction (enforce continuity)
             self._solve_pressure_poisson(u_star, v_star, dt)
 
             # Step 3: Correct velocities
@@ -246,31 +91,21 @@ class Solver:
         print(f"\nReached max steps")
         return self.u, self.v, self.p
 
-    def _solve_u_momentum_rhie_chow(self, dt, nu):
-        """Solve u-momentum using Rhie-Chow interpolated face velocities"""
+    def _solve_u_momentum(self, dt, nu):
+        """Solve u-momentum with implicit diffusion, explicit convection"""
         u_star = self.u.copy()
 
-        # First compute d_u coefficients for all interior cells
         for j in range(1, self.ny - 1):
             for i in range(1, self.nx - 1):
-                # Compute momentum equation coefficient (simplified)
-                diff_coeff = nu * (2.0 / self.dx ** 2 + 2.0 / self.dy ** 2)
-                aP = 1.0 / dt + diff_coeff
-                self.d_u[j, i] = 1.0 / max(aP, 1e-10)
+                # Convection (explicit)
+                u_e = 0.5 * (self.u[j, i] + self.u[j, i + 1])
+                u_w = 0.5 * (self.u[j, i - 1] + self.u[j, i])
+                u_n = 0.5 * (self.u[j, i] + self.u[j + 1, i])
+                u_s = 0.5 * (self.u[j - 1, i] + self.u[j, i])
 
-        # Now solve momentum with Rhie-Chow face velocities
-        for j in range(1, self.ny - 1):
-            for i in range(1, self.nx - 1):
-                # Use Rhie-Chow for face velocities in convection
-                u_e = self._rhie_chow_u_face(j, i, 'east')
-                u_w = self._rhie_chow_u_face(j, i, 'west')
-                u_n = self._rhie_chow_u_face(j, i, 'north')
-                u_s = self._rhie_chow_u_face(j, i, 'south')
+                v_n = 0.5 * (self.v[j, i] + self.v[j + 1, i])
+                v_s = 0.5 * (self.v[j - 1, i] + self.v[j, i])
 
-                v_n = self._rhie_chow_v_face(j, i, 'north')
-                v_s = self._rhie_chow_v_face(j, i, 'south')
-
-                # Convection term with Rhie-Chow velocities
                 conv = (u_e ** 2 - u_w ** 2) / self.dx + (u_n * v_n - u_s * v_s) / self.dy
 
                 # Diffusion (explicit)
@@ -286,30 +121,21 @@ class Solver:
 
         return u_star
 
-    def _solve_v_momentum_rhie_chow(self, dt, nu):
-        """Solve v-momentum using Rhie-Chow interpolated face velocities"""
+    def _solve_v_momentum(self, dt, nu):
+        """Solve v-momentum with implicit diffusion, explicit convection"""
         v_star = self.v.copy()
 
-        # First compute d_v coefficients
         for j in range(1, self.ny - 1):
             for i in range(1, self.nx - 1):
-                diff_coeff = nu * (2.0 / self.dx ** 2 + 2.0 / self.dy ** 2)
-                aP = 1.0 / dt + diff_coeff
-                self.d_v[j, i] = 1.0 / max(aP, 1e-10)
+                # Convection (explicit)
+                v_e = 0.5 * (self.v[j, i] + self.v[j, i + 1])
+                v_w = 0.5 * (self.v[j, i - 1] + self.v[j, i])
+                v_n = 0.5 * (self.v[j, i] + self.v[j + 1, i])
+                v_s = 0.5 * (self.v[j - 1, i] + self.v[j, i])
 
-        # Solve momentum with Rhie-Chow
-        for j in range(1, self.ny - 1):
-            for i in range(1, self.nx - 1):
-                # Use Rhie-Chow for face velocities
-                v_e = self._rhie_chow_v_face(j, i, 'east')
-                v_w = self._rhie_chow_v_face(j, i, 'west')
-                v_n = self._rhie_chow_v_face(j, i, 'north')
-                v_s = self._rhie_chow_v_face(j, i, 'south')
+                u_e = 0.5 * (self.u[j, i] + self.u[j, i + 1])
+                u_w = 0.5 * (self.u[j, i - 1] + self.u[j, i])
 
-                u_e = self._rhie_chow_u_face(j, i, 'east')
-                u_w = self._rhie_chow_u_face(j, i, 'west')
-
-                # Convection with Rhie-Chow velocities
                 conv = (u_e * v_e - u_w * v_w) / self.dx + (v_n ** 2 - v_s ** 2) / self.dy
 
                 # Diffusion (explicit)
@@ -335,7 +161,7 @@ class Solver:
             for i in range(self.nx):
                 idx = j * self.nx + i
 
-                # Boundaries: Neumann BC
+                # Boundaries: Neumann BC (dp/dn = 0)
                 if i == 0 or i == self.nx - 1 or j == 0 or j == self.ny - 1:
                     A[idx, idx] = 1.0
                     if i == 0 and i + 1 < self.nx:
@@ -360,7 +186,7 @@ class Solver:
                           (v_star[j + 1, i] - v_star[j - 1, i]) / (2 * self.dy)
                     b[idx] = div / dt
 
-        # Reference pressure
+        # Reference pressure at center
         ref_idx = self.ny // 2 * self.nx + self.nx // 2
         A[ref_idx, :] = 0
         A[ref_idx, ref_idx] = 1.0
@@ -370,7 +196,7 @@ class Solver:
         p_flat = spsolve(A, b)
         p_new = p_flat.reshape((self.ny, self.nx))
 
-        # Update with relaxation
+        # Update pressure with relaxation
         self.p = self.alpha_p * p_new + (1 - self.alpha_p) * self.p
 
     def _correct_velocities(self, u_star, v_star, dt):
@@ -452,11 +278,12 @@ class Solver:
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("Lid-driven cavity with Rhie-Chow Interpolation")
+    print("Lid-driven cavity flow - Fractional Step Method")
     print("=" * 60)
 
+    # Start with moderate resolution
     solver = Solver(nx=65, ny=65, Re=100, problem_type='cavity')
-    solver.solve(dt=0.001, max_steps=50000, check_interval=20, tolerance=1e-6)
+    solver.solve(dt=0.001, max_steps=50000, check_interval=50, tolerance=1e-6)
 
-    solver.plot_results(save_prefix='cavity_Re100_rhie_chow')
+    solver.plot_results(save_prefix='cavity_Re100')
     solver.plot_centerline_velocity()
