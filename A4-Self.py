@@ -28,6 +28,7 @@ class solver:
         # Convergence criteria
         self.tolerance = 1e-5
         self.max_iterations = 1000
+        self.check_interval = 10
 
         self.solid_mask = np.zeros((self.nx, self.ny), dtype=bool)
         self._setup_geometry()
@@ -65,7 +66,7 @@ class solver:
             step_y = self.ny // 2
             self.solid_mask[:step_y, :step_x] = True
 
-    def apply_bc(self):
+    def _apply_bc(self):
         # 1st: Velocity BCs
 
         # Apply no-slip to all walls by default (u=0, v=0)
@@ -103,8 +104,35 @@ class solver:
         i_ref = self.nx // 2
         self.p[j_ref, i_ref] = 0.0
 
+    def _solve_u_momentum(self):
 
+        # Compute diffusion coefficients. Equation 12a - 12d
+        De = self.dy / (self.Re * self.dx)
+        Dw = self.dy / (self.Re * self.dx)
+        Dn = self.dx / (self.Re * self.dy)
+        Ds = self.dx / (self.Re * self.dy)
 
+    def _solve_v_momentum(self):
+
+        # Compute diffusion coefficients. Equation 12a - 12d
+        De = self.dy / (self.Re * self.dx)
+        Dw = self.dy / (self.Re * self.dx)
+        Dn = self.dx / (self.Re * self.dy)
+        Ds = self.dx / (self.Re * self.dy)
+
+    def solve(self):
+        self._apply_bc()
+        max_i = self.max_iterations
+
+        for i in range(max_i):
+            u_old = self.u.copy()
+            v_old = self.v.copy()
+
+            # 1) Solve discretized u-momentum
+            self._solve_u_momentum()
+
+            # 2) solve discretized v-momentum
+            self._solve_v_momentum()
 
 
 if __name__ == "__main__":
