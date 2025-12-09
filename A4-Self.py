@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
+from A4_Test import max_inner_iteration_uv
 
 
 class solver:
@@ -327,9 +329,109 @@ class solver:
                             self.a_s[i, j] * self.u[i + 1, j] +
                             self.b_u[i, j]) / self.a_p[i, j] + (1 - self.alpha_uv) * self.u_star[i, j])**2
 
+            if n_u == 1: # Outer Iteration Metric for SIMPLE
+                norm_u = math.sqrt(error_u)
+            error_u = math.sqrt(error_u)
+
+            if error_u < self.tolerance:
+                # Inner iteration residual has converged (Gauss-Seidel iterations)
+                break
+
+        for n_v in range(1, max_inner_iteration_uv + 1):
+            error_v = 0
+            for i in range(1, self.ny + 1):
+                for j in range(1, self.nx + 1):
+                    self.v[i, j] = self.alpha_uv * (
+                            self.a_e[i, j] * self.v[i, j + 1] +
+                            self.a_w[i, j] * self.v[i, j - 1] +
+                            self.a_n[i, j] * self.v[i - 1, j] +
+                            self.a_s[i, j] * self.v[i + 1, j] +
+                            self.b_v[i, j]) / self.a_p[i, j] + (1 - self.alpha_uv) * self.v_star[i, j]
+                    error_v += (self.v[i, j] - self.alpha_uv * (
+                            self.a_e[i, j] * self.v[i, j + 1] +
+                            self.a_w[i, j] * self.v[i, j - 1] +
+                            self.a_n[i, j] * self.v[i - 1, j] +
+                            self.a_s[i, j] * self.v[i + 1, j] +
+                            self.b_v[i, j]) / self.a_p[i, j] + (1 - self.alpha_uv) * self.v_star[i, j]) ** 2
+            if n_v == 1:
+                norm_v = math.sqrt(error_v)
+            error_v = math.sqrt(error_v)
+            if error_v < self.tolerance:
+                break
+
+        return norm_u, norm_v
+
+    def pressure_correction(self):
+        # start with interior cells only.
+        for i in range(2, self.ny):
+            for j in range(2, self.nx):
+                self.Ap_e[i,j] = 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i,j+1]) * (self.dy **2)
+                self.Ap_w[i,j] = 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i,j-1]) * (self.dy **2)
+                self.Ap_n[i,j] = 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i-1,j]) * (self.dx **2)
+                self.Ap_s[i,j] = 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i+1,j]) * (self.dx **2)
+                self.Ap_p[i,j] = self.Ap_e[i,j] + self.Ap_w[i,j] + self.Ap_n[i,j] + self.Ap_s[i,j] + self.Ap_s[i,j]
+
+                self.b_p[i,j] = -(self.u_face[i,j] - self.u_face[i,j-1]) * self.dy - (self.v_face[i-1,j] - self.v_face[i,j]) * self.dx
+
+        # top boundary. no corners
+        i_t = 1
+        for j_t in range(2, self.nx):
+            self.Ap_e[i_t, j_t] = 0.5 * self.alpha_uv * (1 / self.a_p[i_t, j_t] + 1 / self.a_p[i_t, j_t + 1]) * (self.dy ** 2)
+            self.Ap_w[i_t, j_t] = 0.5 * self.alpha_uv * (1 / self.a_p[i_t, j_t] + 1 / self.a_p[i_t, j_t - 1]) * (self.dy ** 2)
+            self.Ap_n[i_t, j_t] = 0
+            self.Ap_s[i_t, j_t] = 0.5 * self.alpha_uv * (1 / self.a_p[i_t, j_t] + 1 / self.a_p[i_t + 1, j_t]) * (self.dx ** 2)
+            self.Ap_p[i_t, j_t] = self.Ap_e[i_t, j_t] + self.Ap_w[i_t, j_t] + self.Ap_n[i_t, j_t] + self.Ap_s[i_t, j_t] + self.Ap_s[i_t, j_t]
+
+            self.b_p[i_t, j_t] = -(self.u_face[i_t, j_t] - self.u_face[i_t, j_t - 1]) * self.dy - (self.v_face[i_t - 1, j_t] - self.v_face[i_t, j_t]) * self.dx
+
+        # left boundary. no corners
+        j_l = 1
+        for i_l in range(2, self.ny):
+            self.Ap_e[i_l, j_l] = 0.5 * self.alpha_uv * (1 / self.a_p[i_l, j_l] + 1 / self.a_p[i_l, j_l + 1]) * (self.dy ** 2)
+            self.Ap_w[i_l, j_l] = 0
+            self.Ap_n[i_l, j_l] = 0.5 * self.alpha_uv * (1 / self.a_p[i_l, j_l] + 1 / self.a_p[i_l - 1, j_l]) * (self.dx ** 2)
+            self.Ap_s[i_l, j_l] = 0.5 * self.alpha_uv * (1 / self.a_p[i_l, j_l] + 1 / self.a_p[i_l + 1, j_l]) * (self.dx ** 2)
+            self.Ap_p[i_l, j_l] = self.Ap_e[i_l, j_l] + self.Ap_w[i_l, j_l] + self.Ap_n[i_l, j_l] + self.Ap_s[i_l, j_l] + self.Ap_s[i_l, j_l]
+
+            self.b_p[i_l, j_l] = -(self.u_face[i_l, j_l] - self.u_face[i_l, j_l - 1]) * self.dy - (self.v_face[i_l - 1, j_l] - self.v_face[i_l, j_l]) * self.dx
+
+        # right boundary. no corners
+        j_r = self.nx
+        for i_r in range(2, self.ny):
+            self.Ap_e[i_r, j_r] = 0
+            self.Ap_w[i_r, j_r] = 0.5 * self.alpha_uv * (1 / self.a_p[i_r, j_r] + 1 / self.a_p[i_r, j_r + 1]) * (self.dy ** 2)
+            self.Ap_n[i_r, j_r] = 0.5 * self.alpha_uv * (1 / self.a_p[i_r, j_r] + 1 / self.a_p[i_r - 1, j_r]) * (self.dx ** 2)
+            self.Ap_s[i_r, j_r] = 0.5 * self.alpha_uv * (1 / self.a_p[i_r, j_r] + 1 / self.a_p[i_r + 1, j_r]) * (self.dx ** 2)
+            self.Ap_p[i_r, j_r] = self.Ap_e[i_r, j_r] + self.Ap_w[i_r, j_r] + self.Ap_n[i_r, j_r] + self.Ap_s[i_r, j_r] + self.Ap_s[i_r, j_r]
+
+            self.b_p[i_r, j_r] = -(self.u_face[i_r, j_r] - self.u_face[i_r, j_r - 1]) * self.dy - (self.v_face[i_r - 1, j_r] - self.v_face[i_r, j_r]) * self.dx
+
+        # bottom boundary. no corners
+        i_b = self.ny
+        for j_b in range(2, self.nx):
+            self.Ap_e[i_b, j_b] = 0.5 * self.alpha_uv * (1 / self.a_p[i_b, j_b] + 1 / self.a_p[i_b, j_b + 1]) * (self.dy ** 2)
+            self.Ap_w[i_b, j_b] = 0.5 * self.alpha_uv * (1 / self.a_p[i_b, j_b] + 1 / self.a_p[i_b, j_b + 1]) * (self.dy ** 2)
+            self.Ap_n[i_b, j_b] = 0.5 * self.alpha_uv * (1 / self.a_p[i_b, j_b] + 1 / self.a_p[i_b - 1, j_b]) * (self.dx ** 2)
+            self.Ap_s[i_b, j_b] = 0
+            self.Ap_p[i_b, j_b] = self.Ap_e[i_b, j_b] + self.Ap_w[i_b, j_b] + self.Ap_n[i_b, j_b] + self.Ap_s[i_b, j_b] + self.Ap_s[i_b, j_b]
+
+            self.b_p[i_b, j_b] = -(self.u_face[i_b, j_b] - self.u_face[i_b, j_b - 1]) * self.dy - (self.v_face[i_b - 1, j_b] - self.v_face[i_b, j_b]) * self.dx
+
+    def correct_face_velocity(self):
+        for i in range(1, self.ny + 1):
+            for j in range(1, self.nx):
+                self.u_face[i,j] = self.u_face[i,j] + 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i,j+1]) * (self.p_prime[i,j] - self.p_prime[i, j+1]) * self.dy
+
+        for i in range(2, self.ny + 1):
+            for j in range (1, self.nx + 1):
+                self.v_face[i-1,j] = self.v_face[i-1,j] + 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i-1,j]) * (self.p_prime[i,j] - self.p_prime[i-1,j]) * self.dx
+
     def SIMPLE(self):
-        self._solve_momentum()
-        error_u, error_v = self._solve_uv_matrix()
+        for n_simple in range(1, self.max_iterations + 1):
+            self._solve_momentum()
+            error_u, error_v = self._solve_uv_matrix()
+            print(f'Iteration {n_simple}: u:{error_u:.4f}, v:{error_v:.4f}')
+            self._correct_face_velocity
 
 
 if __name__ == "__main__":
