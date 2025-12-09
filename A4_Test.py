@@ -14,7 +14,7 @@ dy = 1.0 / n_y
 
 Re = 100
 
-
+# solve_momentum function
 def momentum_link_coefficients(u_star, u_face, v_face, p, source_x, source_y, A_p, A_e, A_w, A_n, A_s):
     D_e = dy / (dx * Re)
     D_w = dy / (dx * Re)
@@ -36,8 +36,8 @@ def momentum_link_coefficients(u_star, u_face, v_face, p, source_x, source_y, A_
             A_s[i, j] = D_s + max(0.0, F_s)
             A_p[i, j] = A_w[i, j] + A_e[i, j] + A_n[i, j] + A_s[i, j] + (F_e - F_w) + (F_n - F_s)
 
-            source_x[i, j] = 0.5 * (p[i, j - 1] - p[i, j + 1]) * dx
-            source_y[i, j] = 0.5 * (p[i + 1, j] - p[i - 1, j]) * dy
+            source_x[i, j] = 0.5 * (p[i, j - 1] - p[i, j + 1]) * dx # made this dy to match eqn 17
+            source_y[i, j] = 0.5 * (p[i + 1, j] - p[i - 1, j]) * dy # made this dx to match eqn 18
 
     # left wall
     j = 1
@@ -516,7 +516,7 @@ alpha_p = 0.2
 
 max_outer_iteration = 200
 
-for n in range(1, max_outer_iteration + 1):
+for n in range(1, max_outer_iteration + 1): # SIMPLE function
 
     A_p, A_e, A_w, A_n, A_s, source_x, source_y = momentum_link_coefficients(u_star, u_face, v_face, p, source_x,
                                                                              source_y, A_p, A_e, A_w, A_n, A_s)

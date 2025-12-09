@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.sparse import lil_matrix
+
 
 
 class solver:
@@ -11,50 +11,95 @@ class solver:
         self.problem_type = problem_type
         self.nu = 1.0/ self.Re
 
-        self.u = np.zeros((ny, nx)) # Velocity and pressure fields
-        self.v = np.zeros((ny, nx))
-        self.p = np.zeros((ny, nx))
+        # Velocity and pressure fields
+        # +2 as need ghost cells. ny, nx for the grid size, one ghost cell on each side
+        self.u = np.zeros((ny + 2, nx + 2), dtype=np.float64)
+        self.v = np.zeros((ny + 2, nx + 2), dtype = np.float64)
+        self.p = np.zeros((ny + 2, nx + 2), dtype = np.float64)
 
-        self.u_star = np.zeros_like(self.u) # Correction fields
+        # Correction fields
+        self.u_star = np.zeros_like(self.u)
         self.v_star = np.zeros_like(self.v)
+        self.p_star = np.zeros_like(self.p)
         self.p_prime = np.zeros_like(self.p)
 
-        self.d_u = np.ones((ny, nx)) * 1e-10 # D coefficients
+        # Convective Coefficients
+        self.a_p = np.ones((ny + 2, nx + 2), dtype=np.float64)
+        self.a_e = np.ones((ny + 2, nx + 2), dtype=np.float64)
+        self.a_w = np.ones((ny + 2, nx + 2), dtype=np.float64)
+        self.a_n = np.zeros((ny + 2, nx + 2), dtype=np.float64)
+        self.a_s = np.zeros((ny + 2, nx + 2), dtype=np.float64)
+
+        # Pressure Correction Coefficients
+        self.Ap_e = np.ones((ny + 2, nx + 2), dtype=np.float64)
+        self.Ap_w = np.ones((ny + 2, nx + 2), dtype=np.float64)
+        self.Ap_n = np.ones((ny + 2, nx + 2), dtype=np.float64)
+        self.Ap_s = np.zeros((ny + 2, nx + 2), dtype=np.float64)
+        self.Ap_p = np.ones((ny + 2, nx + 2), dtype=np.float64)
+
+        # Source Terms
+        self.b_u = np.zeros((ny + 2, nx + 2), dtype=np.float64)
+        self.b_v = np.zeros((ny + 2, nx + 2), dtype=np.float64)
+        self.b_p = np.zeros((ny + 2, nx + 2), dtype=np.float64)
+
+        # Face Velocities
+        self.u_face = np.zeros((ny + 2, nx + 2), dtype=np.float64)
+        self.v_face = np.zeros((ny + 2, nx + 2), dtype=np.float64)
+
+        # D coefficients
+        self.d_u = np.ones((ny, nx)) * 1e-10
         self.d_v = np.ones((ny, nx)) * 1e-10
 
-        self.alpha_u = 0.7 # Under relaxation variables
-        self.alpha_v = 0.7
+        # Under relaxation variables
+        self.alpha_uv = 0.7
         self.alpha_p = 0.3
 
-        # Convergence criteria
-        self.tolerance = 1e-5
-        self.max_iterations = 1000
-        self.check_interval = 10
+        # Convergence criteria for iterative solvers
+        self.tolerance = 1e-4
+        self.max_iterations = 250
+        self.check_interval = 5
+
+
 
         self.solid_mask = np.zeros((self.nx, self.ny), dtype=bool)
         self._setup_geometry()
 
-        # Compute diffusion coefficients. Equation 12a - 12d
-        self.De, self.Dw, self.Dn, self.Ds = self._compute_diffusion_coefficient()
-
+        self._apply_bc()
 
     def _setup_geometry(self):
         if self.problem_type == 'cavity':
             self.Lx = 1.0
             self.Ly = 1.0
-            self.dx = self.Lx / (self.nx - 1)
-            self.dy = self.Ly / (self.ny - 1)
-            self.x = np.linspace(0, self.Lx, self.nx)
-            self.y = np.linspace(0, self.Ly, self.ny)
+            self.dx = self.Lx / (self.nx)
+            self.dy = self.Ly / (self.ny)
+
+            # Mesh Creation
+            # Generate internal cell centers
+            x_internal = np.linspace(self.dx / 2, 1 - self.dx / 2, self.nx)
+            y_internal = np.linspace(self.dy / 2, 1 - self.dy / 2, self.ny)
+            # Concatenate boundaries ([0] for 0 side, [1] for far side) and internal
+            x = np.concatenate(([0.0], x_internal, [1.0]))
+            y = np.concatenate(([0.0], y_internal, [1.0]))
+            # Make into a grid
+            self.x, self.y = np.meshgrid(x, y)
 
 
-        elif self.problem_type == 'cavity_step':
+        ''' elif self.problem_type == 'cavity_step':
             self.Lx = 1.0
             self.Ly = 1.0
-            self.dx = self.Lx / (self.nx - 1)
-            self.dy = self.Ly / (self.ny - 1)
-            self.x = np.linspace(0, self.Lx, self.nx)
-            self.y = np.linspace(0, self.Ly, self.ny)
+            self.dx = self.Lx / (self.nx)
+            self.dy = self.Ly / (self.ny)
+
+            # Mesh Creation
+            # Generate internal cell centers
+            x_internal = np.linspace(self.dx / 2, 1 - self.dx / 2, self.nx)
+            y_internal = np.linspace(self.dy / 2, 1 - self.dy / 2, self.ny)
+            # Concatenate boundaries ([0] for 0 side, [1] for far side) and internal
+            x = np.concatenate(([0.0], x_internal, [1.0]))
+            y = np.concatenate(([0.0], y_internal, [1.0]))
+            # Make into a grid
+            self.x, self.y = np.meshgrid(x, y)
+
             step_x = self.nx // 3
             step_y = self.ny // 3
             self.solid_mask[:step_y, :step_x] = True
@@ -62,13 +107,22 @@ class solver:
         elif self.problem_type == 'backstep':
             self.Lx = 2.0
             self.Ly = 0.25
-            self.dx = self.Lx / (self.nx - 1)
-            self.dy = self.Lx / (self.ny - 1)
-            self.x = np.linspace(0, self.Lx, self.nx)
-            self.y = np.linspace(0, self.Ly, self.ny)
+            self.dx = self.Lx / (self.nx)
+            self.dy = self.Lx / (self.ny)
+
+            # Mesh Creation
+            # Generate internal cell centers
+            x_internal = np.linspace(self.dx / 2, 1 - self.dx / 2, self.nx)
+            y_internal = np.linspace(self.dy / 2, 1 - self.dy / 2, self.ny)
+            # Concatenate boundaries ([0] for 0 side, [1] for far side) and internal
+            x = np.concatenate(([0.0], x_internal, [1.0]))
+            y = np.concatenate(([0.0], y_internal, [1.0]))
+            # Make into a grid
+            self.x, self.y = np.meshgrid(x, y)
+
             step_x = self.nx // 2
             step_y = self.ny // 2
-            self.solid_mask[:step_y, :step_x] = True
+            self.solid_mask[:step_y, :step_x] = True '''
 
     def _apply_bc(self):
         # 1st: Velocity BCs
@@ -85,30 +139,21 @@ class solver:
 
         # Now, problem specific BCs
         if self.problem_type == 'cavity' or self.problem_type == 'cavity_step':
-            self.u[-1,:] = 1.0
+            self.u[0, 1:self.nx + 1] = 1.0
+            self.u_star[0, 1:self.nx + 1] = 1.0
+            self.u_face[0, 1:self.nx] = 1.0
 
-        if self.problem_type == 'backstep': # NO PARABOLIC PROFILE
-            j_mid = self.ny // 2
-            self.u[j_mid:,0] = 1.0
-            self.u[:, -1] = self.u[:,-2] # Zero Gradient at outlet (approx)
-            self.v[:,-1] = self.v[:,-2]
+        # if self.problem_type == 'backstep': # NO PARABOLIC PROFILE
+        #     j_mid = self.ny // 2
+        #     self.u[j_mid:,0] = 1.0
+        #     self.u[:, -1] = self.u[:,-2] # Zero Gradient at outlet (approx)
+         #    self.v[:,-1] = self.v[:,-2]
 
-        self.u[self.solid_mask] = 0.0
-        self.v[self.solid_mask] = 0.0
-
-        # 2nd: Pressure BCs
-
-        # Zero gradient at Boundaries (approximate Neumann)
-        self.p[0, :] = self.p[1, :]
-        self.p[-1, :] = self.p[-2, :]
-        self.p[:, 0] = self.p[:, 1]
-        self.p[:, -1] = self.p[:, -2]
-        # Reference Pressure at domain center (p_ref = 0)
-        j_ref = self.ny // 2
-        i_ref = self.nx // 2
-        self.p[j_ref, i_ref] = 0.0
+        # self.u[self.solid_mask] = 0.0
+        # self.v[self.solid_mask] = 0.0
 
     def _compute_diffusion_coefficient(self):
+        # Equations 12a - 12d
         De = self.dy / (self.Re * self.dx)
         Dw = self.dy / (self.Re * self.dx)
         Dn = self.dx / (self.Re * self.dy)
@@ -116,53 +161,188 @@ class solver:
 
         return De, Dw, Dn, Ds
 
-    def _idx(self, i, j):
-        return j * self.nx + i
+    def _compute_convective_mass(self, i, j):
+        # Convective mass flux coefficients, Equation 10a - 10d
+        Fe = self.dy * self.u_face[i, j]
+        Fw = self.dy * self.u_face[i, j - 1]
+        Fn = self.dx * self.v_face[i - 1, j]
+        Fs = self.dx * self.v_face[i, j]
+
+        return Fe, Fw, Fn, Fs
 
     def _solve_momentum(self):
+        De, Dw, Dn, Ds = self._compute_diffusion_coefficient()
+        # In below loops, i represents y and j represents x. Makes the [i,j] make sense
+        # Look only at the interior nodes. Not the boundaries
+        for i in range(2, self.ny):
+            for j in range(2, self.nx):
+                # Convective mass flux coefficients
+                Fe, Fw, Fn, Fs = self._compute_convective_mass(i, j)
+                # Convective Coefficients, Equation 15a-15e
+                self.a_e[i,j] = De + max(0.0, -Fe)
+                self.a_w[i,j] = Dw + max(0.0, Fw)
+                self.a_n[i,j] = Dn + max(0.0, -Fn)
+                self.a_s[i,j] = Ds + max(0.0, Fs)
+                self.a_p[i,j] = self.a_e[i,j] + self.a_w[i,j] + self.a_n[i,j] + self.a_s[i,j] + (Fe - Fw) + (Fn - Fs)
+                # Source Terms - Equations 17, 18
+                self.b_u[i,j] = 0.5 * (self.p[i, j - 1] - self.p[i, j + 1]) * self.dy
+                self.b_v[i,j] = 0.5 * (self.p[i + 1, j] - self.p[i - 1, j]) * self.dx
 
-        N = self.nx * self.ny
-        A = lil_matrix((N, N))
-        b = np.zeros(N)
+        # Now look at the Left Wall only. No corners
+        j_l = 1
+        for i_l in range (2, self.ny):
+            # Convective mass flux coefficients
+            Fe, Fw, Fn, Fs = self._compute_convective_mass(i_l, j_l)
+            # Convective Coefficients, Equations 15a-15e. Modified as edge case
+            self.a_e[i_l,j_l] = De + max(0.0, -Fe)
+            self.a_w[i_l,j_l] = 2 * Dw + max(0.0, Fw)
+            self.a_n[i_l,j_l] = Dn + max(0.0, -Fn)
+            self.a_s[i_l,j_l] = Ds + max(0.0, Fs)
+            self.a_p[i_l,j_l] = self.a_e[i_l,j_l] + self.a_w[i_l,j_l] + self.a_n[i_l,j_l] + self.a_s[i_l,j_l] + (Fe - Fw) + (Fn - Fs)
+            # Source Terms - Equations 17, 18. Modified as edge case
+            self.b_u[i_l, j_l] = 0.5 * (self.p[i_l, j_l] - self.p[i_l, j_l + 1]) * self.dy
+            self.b_v[i_l, j_l] = 0.5 * (self.p[i_l + 1, j_l] - self.p[i_l - 1, j_l]) * self.dx
 
-        # Areas
-        Ae = self.dy
-        Aw = self.dy
-        An = self.dx
-        As = self.dx
+        # Bottom Wall. No corners
+        i_b = self.ny
+        for j_b in range(2, self.nx):
+            # Convective mass flux coefficients
+            Fe, Fw, Fn, Fs = self._compute_convective_mass(i_b, j_b)
+            # Convective Coefficients, Equations 15a-15e. Modified as edge case
+            self.a_e[i_b,j_b] = De + max(0.0, -Fe)
+            self.a_w[i_b,j_b] = Dw + max(0.0, Fw)
+            self.a_n[i_b,j_b] = Dn + max(0.0, -Fn)
+            self.a_s[i_b,j_b] = 2 * Ds + max(0.0, Fs)
+            self.a_p[i_b,j_b] = self.a_e[i_b,j_b] + self.a_w[i_b,j_b] + self.a_n[i_b,j_b] + self.a_s[i_b,j_b] + (Fe - Fw) + (Fn - Fs)
+            # Source Terms - Equation 17, 18. Modified as edge case
+            self.b_u[i_b,j_b] = 0.5 * (self.p[i_b,j_b - 1] - self.p[i_b, j_b + 1]) * self.dy
+            self.b_v[i_b,j_b] = 0.5 * (self.p[i_b,j_b] - self.p[i_b - 1, j_b]) * self.dx
 
-        for j in range(self.ny):
-            for i in range (self.nx):
-                idx = j * self.nx + i
-                if self.solid_mask[j, i]:
-                    A[idx, idx] = 1.0
-                    b[idx] = 0.0
-                    continue
+        # Right Wall. No Corners
+        j_r = self.nx
+        for i_r in range(2, self.ny):
+            # Convective mass flux coefficients
+            Fe, Fw, Fn, Fs = self._compute_convective_mass(i_r, j_r)
+            # Convective Coefficients, Equations 15a - 15e. Modified as edge case
+            self.a_e[i_r,j_r] = De + max(0.0, -Fe)
+            self.a_w[i_r,j_r] = 2 * Dw + max(0.0, Fw)
+            self.a_n[i_r,j_r] = Dn + max(0.0, -Fn)
+            self.a_s[i_r,j_r] = Ds + max(0.0, Fs)
+            self.a_p[i_r, j_r] = self.a_e[i_r, j_r] + self.a_w[i_r, j_r] + self.a_n[i_r, j_r] + self.a_s[i_r, j_r] + (Fe - Fw) + (Fn - Fs)
+            # Source Terms - Equation 17, 18. Modified as edge case
+            self.b_u[i_r, j_r] = 0.5 * (self.p[i_r, j_r - 1] - self.p[i_r, j_r]) * self.dy
+            self.b_v[i_r, j_r] = 0.5 * (self.p[i_r + 1, j_r] - self.p[i_r - 1, j_r]) * self.dx
 
-                # Cell Face convective velocities (Rhie-Chow). Look at Equation 11.76 - 11.
+        # Top Wall. No Corners.
+        i_t = 1
+        for j_t in range(2, self.ny):
+            # Convective mass flux
+            Fe, Fw, Fn, Fs = self._compute_convective_mass(i_t, j_t)
+            # Convective Coefficients, Equations 15a - 15e. Modified for edge cases
+            self.a_e[i_t, j_t] = De + max(0.0, -Fe)
+            self.a_w[i_t, j_t] = Dw + max(0.0, Fw)
+            self.a_n[i_t, j_t] = 2 * Dn + max(0.0, -Fn)
+            self.a_s[i_t, j_t] = Ds + max(0.0, Fs)
+            self.a_p[i_t, j_t] = self.a_e[i_t, j_t] + self.a_w[i_t, j_t] + self.a_n[i_t, j_t] + self.a_s[i_t, j_t] + (Fe - Fw) + (Fn - Fs)
+            # Source Terms - Equation 17, 18
+            self.b_u[i_t, j_t] = 0.5 * (self.p[i_t, j_t - 1] - self.p[i_t, j_t + 1]) * self.dy
+            self.b_v[i_t, j_t] = 0.5 * (self.p[i_t + 1, j_t] - self.p[i_t, j_t]) * self.dx
+
+        # Top Left Corner
+        i_tl = 1
+        j_tl = 1
+        # Convective mass flux
+        Fe, Fw, Fn, Fs = self._compute_convective_mass(i_tl, j_tl)
+        # Convective Coefficients
+        self.a_e[i_tl, j_tl] = De + max(0.0, -Fe)
+        self.a_w[i_tl, j_tl] = 2 * Dw + max(0.0, Fw)
+        self.a_n[i_tl, j_tl] = 2 * Dn + max(0.0, -Fn)
+        self.a_s[i_tl, j_tl] = Ds + max(0.0, Fs)
+        self.a_p[i_tl, j_tl] = self.a_e[i_tl, j_tl] + self.a_w[i_tl, j_tl] + self.a_n[i_tl, j_tl] + self.a_s[i_tl, j_tl] + (Fe - Fw) + (Fn - Fs)
+        # Source Terms - Equation 17, 18
+        self.b_u[i_tl, j_tl] = 0.5 * (self.p[i_tl, j_tl] - self.p[i_tl, j_tl + 1]) * self.dy
+        self.b_v[i_tl, j_tl] = 0.5 * (self.p[i_tl + 1, j_tl] - self.p[i_tl, j_tl]) * self.dx
+
+        # Top Right Corner
+        i_tr = 1
+        j_tr = self.nx
+        # Convective mass flux
+        Fe, Fw, Fn, Fs = self._compute_convective_mass(i_tr, j_tr)
+        # Convective Coefficients
+        self.a_e[i_tr, j_tr] = De + max(0.0, -Fe)
+        self.a_w[i_tr, j_tr] = 2 * Dw + max(0.0, Fw)
+        self.a_n[i_tr, j_tr] = 2 * Dn + max(0.0, -Fn)
+        self.a_s[i_tr, j_tr] = Ds + max(0.0, Fs)
+        self.a_p[i_tr, j_tr] = self.a_e[i_tr, j_tr] + self.a_w[i_tr, j_tr] + self.a_n[i_tr, j_tr] + self.a_s[i_tr, j_tr] + (Fe - Fw) + (Fn - Fs)
+        # Source Terms - Equation 17, 18
+        self.b_u[i_tr, j_tr] = 0.5 * (self.p[i_tr, j_tr - 1] - self.p[i_tr, j_tr]) * self.dy
+        self.b_v[i_tr, j_tr] = 0.5 * (self.p[i_tr + 1, j_tr] - self.p[i_tr, j_tr]) * self.dx
+
+        # Bottom Left Corner
+        i_bl = self.ny
+        j_bl = 1
+        # Convective mass flux
+        Fe, Fw, Fn, Fs = self._compute_convective_mass(i_bl, j_bl)
+        # Convective Coefficients
+        self.a_e[i_bl, j_bl] = De + max(0.0, -Fe)
+        self.a_w[i_bl, j_bl] = 2 * Dw + max(0.0, Fw)
+        self.a_n[i_bl, j_bl] = 2 * Dn + max(0.0, -Fn)
+        self.a_s[i_bl, j_bl] = Ds + max(0.0, Fs)
+        self.a_p[i_bl, j_bl] = self.a_e[i_bl, j_bl] + self.a_w[i_bl, j_bl] + self.a_n[i_bl, j_bl] + self.a_s[i_bl, j_bl] + (Fe - Fw) + (Fn - Fs)
+        # Source Terms - Equation 17, 18
+        self.b_u[i_bl, j_bl] = 0.5 * (self.p[i_bl, j_bl] - self.p[i_bl, j_bl + 1]) * self.dy
+        self.b_v[i_bl, j_bl] = 0.5 * (self.p[i_bl, j_bl] - self.p[i_bl - 1, j_bl]) * self.dx
+
+        # Bottom Right Corner
+        i_br = self.ny
+        j_br = self.nx
+        # Convective mass flux
+        Fe, Fw, Fn, Fs = self._compute_convective_mass(i_br, j_br)
+        # Convective Coefficients
+        self.a_e[i_br, j_br] = De + max(0.0, -Fe)
+        self.a_w[i_br, j_br] = 2 * Dw + max(0.0, Fw)
+        self.a_n[i_br, j_br] = 2 * Dn + max(0.0, -Fn)
+        self.a_s[i_br, j_br] = Ds + max(0.0, Fs)
+        self.a_p[i_br, j_br] = self.a_e[i_br, j_br] + self.a_w[i_br, j_br] + self.a_n[i_br, j_tl] + self.a_s[i_br, j_tl] + (Fe - Fw) + (Fn - Fs)
+        # Source Terms - Equation 17, 18
+        self.b_u[i_br, j_br] = 0.5 * (self.p[i_br, j_br] - self.p[i_br, j_br + 1]) * self.dy
+        self.b_v[i_br, j_br] = 0.5 * (self.p[i_br, j_br] - self.p[i_br - 1, j_br]) * self.dx
 
 
+    def _solve_uv_matrix(self):
+        for n_u in range(1, self.max_iterations + 1):
+            error_u = 0
+            for i in range(1, self.ny + 1):
+                for j in range(1, self.nx + 1):
+                    self.u[i,j] = self.alpha_uv * (
+                            self.a_e[i,j] * self.u[i, j + 1] +
+                            self.a_w[i,j] * self.u[i,j-1] +
+                            self.a_n[i,j] * self.u[i-1,j] +
+                            self.a_s[i,j] * self.u[i+1,j] +
+                            self.b_u[i,j]) / self.a_p[i,j] + (1 - self.alpha_uv) * self.u_star[i,j]
+                    error_u += (self.u[i,j] - self.alpha_uv * (
+                            self.a_e[i, j] * self.u[i, j + 1] +
+                            self.a_w[i, j] * self.u[i, j - 1] +
+                            self.a_n[i, j] * self.u[i - 1, j] +
+                            self.a_s[i, j] * self.u[i + 1, j] +
+                            self.b_u[i, j]) / self.a_p[i, j] + (1 - self.alpha_uv) * self.u_star[i, j])**2
 
-    def solve(self):
-        self._apply_bc()
-        max_i = self.max_iterations
-
-        for i in range(max_i):
-            u_old = self.u.copy()
-            v_old = self.v.copy()
-
-            # 1) Solve discretized u-momentum
-            self._solve_u_momentum()
-
-            # 2) solve discretized v-momentum
-            self._solve_v_momentum()
+    def SIMPLE(self):
+        self._solve_momentum()
+        error_u, error_v = self._solve_uv_matrix()
 
 
 if __name__ == "__main__":
 
+
     cavitySolve = solver(nx = 33, ny = 33, Re = 100, problem_type = 'cavity')
-    cavityStepSolve = solver(nx=33, ny=33, Re=100, problem_type='cavity_step')
+    cavitySolve.SIMPLE()
+
+    #cavityStepSolve = solver(nx=33, ny=33, Re=100, problem_type='cavity_step')
     # backstepSolve = solver(nx = 33, ny=33, Re=100, problem_type='backstep')
+
+
+
 
     # Actual Assignment Cases:
     # cavitySolve = solver(257, 257, 100, 'cavity')

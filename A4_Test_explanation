@@ -1,0 +1,11 @@
+A_e = ae = convective coefficient = Equation 15. ap, ae, an, aw, as
+
+epsilon = tolerance for convergence
+
+in solve_momentum, source term multiplier is switched from dy to dx, dx to dy.
+Matches my explanation in Equations 17 and 18.
+If non convergence, switch this and try again. If it then converges, then find why.
+
+combine v = solve() and u = solve() into solve_uv_momentum()
+
+
