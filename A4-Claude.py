@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import spsolve
 
+# THIS IS FRACTIONAL-STEP, NOT SIMPLE
 
 class Solver:
     def __init__(self, nx: int, ny: int, Re: float, problem_type: str):

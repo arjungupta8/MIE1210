@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.sparse import lil_matrix
 
 
 class solver:
@@ -32,6 +33,9 @@ class solver:
 
         self.solid_mask = np.zeros((self.nx, self.ny), dtype=bool)
         self._setup_geometry()
+
+        # Compute diffusion coefficients. Equation 12a - 12d
+        self.De, self.Dw, self.Dn, self.Ds = self._compute_diffusion_coefficient()
 
 
     def _setup_geometry(self):
@@ -104,21 +108,40 @@ class solver:
         i_ref = self.nx // 2
         self.p[j_ref, i_ref] = 0.0
 
-    def _solve_u_momentum(self):
-
-        # Compute diffusion coefficients. Equation 12a - 12d
+    def _compute_diffusion_coefficient(self):
         De = self.dy / (self.Re * self.dx)
         Dw = self.dy / (self.Re * self.dx)
         Dn = self.dx / (self.Re * self.dy)
         Ds = self.dx / (self.Re * self.dy)
 
-    def _solve_v_momentum(self):
+        return De, Dw, Dn, Ds
 
-        # Compute diffusion coefficients. Equation 12a - 12d
-        De = self.dy / (self.Re * self.dx)
-        Dw = self.dy / (self.Re * self.dx)
-        Dn = self.dx / (self.Re * self.dy)
-        Ds = self.dx / (self.Re * self.dy)
+    def _idx(self, i, j):
+        return j * self.nx + i
+
+    def _solve_momentum(self):
+
+        N = self.nx * self.ny
+        A = lil_matrix((N, N))
+        b = np.zeros(N)
+
+        # Areas
+        Ae = self.dy
+        Aw = self.dy
+        An = self.dx
+        As = self.dx
+
+        for j in range(self.ny):
+            for i in range (self.nx):
+                idx = j * self.nx + i
+                if self.solid_mask[j, i]:
+                    A[idx, idx] = 1.0
+                    b[idx] = 0.0
+                    continue
+
+                # Cell Face convective velocities (Rhie-Chow). Look at Equation 11.76 - 11.
+
+
 
     def solve(self):
         self._apply_bc()
