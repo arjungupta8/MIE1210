@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 
+# Works for smaller grids (30x30).
 
 class solver:
     def __init__(self, nx, ny, Re, problem_type):
@@ -46,16 +47,17 @@ class solver:
         self.u_face = np.zeros((ny + 2, nx + 1), dtype=np.float64)
         self.v_face = np.zeros((ny + 1, nx + 2), dtype=np.float64)
 
-        # Under relaxation variables
-        self.alpha_uv = 0.5
-        self.alpha_p = 0.2
+        # Under relaxation variables. Was 0.7 and 0.3 for a 30x30 grid.
+        self.alpha_uv = 0.25
+        self.alpha_p = 0.1
 
         # Convergence criteria for iterative solvers
         self.tolerance_uv = 1e-3
         self.tolerance_p = 1e-4
-        self.max_iterations_uv = 200
-        self.max_iterations_p = 200
-        self.max_outer_iterations = 500
+        # was 50, 200, 250. Multiply by 8.5 for the larger grid
+        self.max_iterations_uv = 300
+        self.max_iterations_p = 1000
+        self.max_outer_iterations = 2125
 
         self._setup_geometry()
 
@@ -217,71 +219,45 @@ class solver:
         # Solve u momentum
         for n_u in range(1, self.max_iterations_uv + 1):
             error_u = 0
-            # Vectorized update for u using array indexing
-            i_slice = slice(1, self.ny + 1)
-            j_slice = slice(1, self.nx + 1)
-
-            u_new = self.alpha_uv * (
-                    self.a_e[i_slice, j_slice] * self.u[i_slice, 2:self.nx + 2] +
-                    self.a_w[i_slice, j_slice] * self.u[i_slice, 0:self.nx] +
-                    self.a_n[i_slice, j_slice] * self.u[0:self.ny, j_slice] +
-                    self.a_s[i_slice, j_slice] * self.u[2:self.ny + 2, j_slice] +
-                    self.b_u[i_slice, j_slice]) / self.a_p[i_slice, j_slice] + (1 - self.alpha_uv) * self.u_star[
-                        i_slice, j_slice]
-
-            self.u[i_slice, j_slice] = u_new
-
-            # Calculate error
-            residual = u_new - self.alpha_uv * (
-                    self.a_e[i_slice, j_slice] * self.u[i_slice, 2:self.nx + 2] +
-                    self.a_w[i_slice, j_slice] * self.u[i_slice, 0:self.nx] +
-                    self.a_n[i_slice, j_slice] * self.u[0:self.ny, j_slice] +
-                    self.a_s[i_slice, j_slice] * self.u[2:self.ny + 2, j_slice] +
-                    self.b_u[i_slice, j_slice]) / self.a_p[i_slice, j_slice] - (1 - self.alpha_uv) * self.u_star[
-                           i_slice, j_slice]
-
-            error_u = np.sum(residual ** 2) * 2  # Multiply by 2 to match original double loop
-
+            for i in range(1, self.ny + 1):
+                for j in range(1, self.nx + 1):
+                    u_old = self.u[i,j]
+                    self.u[i, j] = self.alpha_uv * (
+                            self.a_e[i, j] * self.u[i, j + 1] +
+                            self.a_w[i, j] * self.u[i, j - 1] +
+                            self.a_n[i, j] * self.u[i - 1, j] +
+                            self.a_s[i, j] * self.u[i + 1, j] +
+                            self.b_u[i, j]) / self.a_p[i, j] + (1 - self.alpha_uv) * self.u_star[i, j]
+                    error_u += (self.u[i,j] - u_old) ** 2
             if n_u == 1:
                 norm_u = math.sqrt(error_u)
             error_u = math.sqrt(error_u)
 
-            if error_u < self.tolerance_uv:
+            if error_u < self.tolerance_uv and norm_u > 1e-10:
                 break
 
         # Solve v momentum
         for n_v in range(1, self.max_iterations_uv + 1):
             error_v = 0
-            # Vectorized update for v
-            v_new = self.alpha_uv * (
-                    self.a_e[i_slice, j_slice] * self.v[i_slice, 2:self.nx + 2] +
-                    self.a_w[i_slice, j_slice] * self.v[i_slice, 0:self.nx] +
-                    self.a_n[i_slice, j_slice] * self.v[0:self.ny, j_slice] +
-                    self.a_s[i_slice, j_slice] * self.v[2:self.ny + 2, j_slice] +
-                    self.b_v[i_slice, j_slice]) / self.a_p[i_slice, j_slice] + (1 - self.alpha_uv) * self.v_star[
-                        i_slice, j_slice]
-
-            self.v[i_slice, j_slice] = v_new
-
-            # Calculate error
-            residual = v_new - self.alpha_uv * (
-                    self.a_e[i_slice, j_slice] * self.v[i_slice, 2:self.nx + 2] +
-                    self.a_w[i_slice, j_slice] * self.v[i_slice, 0:self.nx] +
-                    self.a_n[i_slice, j_slice] * self.v[0:self.ny, j_slice] +
-                    self.a_s[i_slice, j_slice] * self.v[2:self.ny + 2, j_slice] +
-                    self.b_v[i_slice, j_slice]) / self.a_p[i_slice, j_slice] - (1 - self.alpha_uv) * self.v_star[
-                           i_slice, j_slice]
-
-            error_v = np.sum(residual ** 2) * 2  # Multiply by 2 to match original double loop
+            for i in range(1, self.ny + 1):
+                for j in range(1, self.nx + 1):
+                    v_old = self.v[i,j]
+                    self.v[i, j] = self.alpha_uv * (
+                            self.a_e[i, j] * self.v[i, j + 1] +
+                            self.a_w[i, j] * self.v[i, j - 1] +
+                            self.a_n[i, j] * self.v[i - 1, j] +
+                            self.a_s[i, j] * self.v[i + 1, j] +
+                            self.b_v[i, j]) / self.a_p[i, j] + (1 - self.alpha_uv) * self.v_star[i, j]
+                    error_v += (self.v[i,j] - v_old) ** 2
 
             if n_v == 1:
                 norm_v = math.sqrt(error_v)
             error_v = math.sqrt(error_v)
 
-            if error_v < self.tolerance_uv:
+            if error_v < self.tolerance_uv and norm_v > 1e-10:
                 break
 
-        return norm_u, norm_v
+        return error_u, error_v
 
     def _face_velocity(self):
         # U face velocity
@@ -408,35 +384,25 @@ class solver:
 
     def _solve_p_matrix(self):
         for n_p in range(1, self.max_iterations_p + 1):
-            # Vectorized update for pressure correction
-            i_slice = slice(1, self.ny + 1)
-            j_slice = slice(1, self.nx + 1)
-
-            p_new = (self.Ap_e[i_slice, j_slice] * self.p_prime[i_slice, 2:self.nx + 2] +
-                     self.Ap_w[i_slice, j_slice] * self.p_prime[i_slice, 0:self.nx] +
-                     self.Ap_n[i_slice, j_slice] * self.p_prime[0:self.ny, j_slice] +
-                     self.Ap_s[i_slice, j_slice] * self.p_prime[2:self.ny + 2, j_slice] +
-                     self.b_p[i_slice, j_slice]) / self.Ap_p[i_slice, j_slice]
-
-            self.p_prime[i_slice, j_slice] = p_new
-
-            # Calculate error
-            residual = p_new - (self.Ap_e[i_slice, j_slice] * self.p_prime[i_slice, 2:self.nx + 2] +
-                                self.Ap_w[i_slice, j_slice] * self.p_prime[i_slice, 0:self.nx] +
-                                self.Ap_n[i_slice, j_slice] * self.p_prime[0:self.ny, j_slice] +
-                                self.Ap_s[i_slice, j_slice] * self.p_prime[2:self.ny + 2, j_slice] +
-                                self.b_p[i_slice, j_slice]) / self.Ap_p[i_slice, j_slice]
-
-            error_p = np.sum(residual ** 2) * 2  # Multiply by 2 to match original double loop
+            error_p = 0
+            for i in range(1, self.ny + 1):
+                for j in range(1, self.nx + 1):
+                    p_old = self.p_prime[i,j]
+                    self.p_prime[i, j] = (self.Ap_e[i, j] * self.p_prime[i, j + 1] +
+                                                 self.Ap_w[i, j] * self.p_prime[i, j - 1] +
+                                                 self.Ap_n[i, j] * self.p_prime[i - 1, j] +
+                                                 self.Ap_s[i, j] * self.p_prime[i + 1, j] +
+                                                 self.b_p[i, j]) / self.Ap_p[i, j]
+                    error_p += (self.p_prime[i,j] - p_old) ** 2
 
             if n_p == 1:
                 norm_p = math.sqrt(error_p)
             error_p = math.sqrt(error_p)
 
-            if error_p < self.tolerance_p:
+            if norm_p > 1e-10 and error_p < self.tolerance_p:
                 break
 
-        return norm_p
+        return error_p
 
     def _correct_pressure(self):
         self.p_star = self.p + self.alpha_p * self.p_prime
@@ -519,24 +485,29 @@ class solver:
             self._face_velocity()
             self._pressure_correction()
             error_p = self._solve_p_matrix()
+
+            mass_res = np.max(np.abs(self.b_p[1:-1, 1:-1]))
+
             self._correct_pressure()
             self._correct_cell_center_vel()
             self._correct_face_velocity()
             self.p = np.copy(self.p_star)
 
-            print(f'Iteration {n_simple}: u: {error_u}, v:{error_v}, p:{error_p}')
+            if n_simple % 10 == 0:  # Print every 10 iterations
+                print(f'Iteration {n_simple}: u: {error_u}, v:{error_v}, p:{error_p}, mass: {mass_res}')
 
-            if (error_u < 1e-4 and error_v < 1e-4 and error_p < 1e-4):
-                print("Converged!")
+            if (error_u < self.tolerance_uv and error_v < self.tolerance_uv and error_p < self.tolerance_p and mass_res < 1e-6):
+                print(f"Converged on iteration {n_simple}!")
+                print(f'Iteration {n_simple}: u: {error_u}, v:{error_v}, p:{error_p}, mass: {mass_res}')
+
                 break
 
-        # Plot streamlines - use only the interior cells for plotting
+        # Plot streamlines
+        plt.figure(figsize=(8, 8))
         x_plot = self.x[1:-1, 1:-1]
         y_plot = self.y[1:-1, 1:-1]
         u_plot = np.flipud(self.u_star[1:-1, 1:-1])
         v_plot = np.flipud(self.v_star[1:-1, 1:-1])
-
-        plt.figure(figsize=(8, 8))
         plt.streamplot(x_plot, y_plot, u_plot, v_plot, density=1.8, linewidth=1, arrowsize=1)
         plt.title('Streamlines')
         plt.xlabel('x')

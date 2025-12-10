@@ -516,19 +516,19 @@ u_star[0, 1:n_x + 1] = 1
 u_face[0, 1:n_x] = 1
 
 l2_norm_x = 0
-alpha_uv = 0.7
+alpha_uv = 0.25
 epsilon_uv = 1e-3
-max_inner_iteration_uv = 50
+max_inner_iteration_uv = 400
 
 l2_norm_y = 0
 
 l2_norm_p = 0
-max_inner_iteration_p = 200
+max_inner_iteration_p = 1000
 dummy_alpha_p = 1
 epsilon_p = 1e-4
-alpha_p = 0.2
+alpha_p = 0.1
 
-max_outer_iteration = 200
+max_outer_iteration = 2000
 
 for n in range(1, max_outer_iteration + 1): # SIMPLE function
 

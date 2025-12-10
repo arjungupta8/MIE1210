@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import cg
 
 # THIS IS FRACTIONAL-STEP, NOT SIMPLE
 
@@ -368,7 +369,7 @@ class Solver:
         b[ref_idx] = 0.0
 
         A = A.tocsr()
-        p_flat = spsolve(A, b)
+        p_flat, info = cg(A, b)
         p_new = p_flat.reshape((self.ny, self.nx))
 
         # Update with relaxation
@@ -457,7 +458,7 @@ if __name__ == "__main__":
     print("=" * 60)
 
     solver = Solver(nx=65, ny=65, Re=100, problem_type='cavity')
-    solver.solve(dt=0.001, max_steps=50000, check_interval=20, tolerance=1e-6)
+    solver.solve(dt=0.001, max_steps=50000, check_interval=100, tolerance=5e-5)
 
     solver.plot_results(save_prefix='cavity_Re100_rhie_chow')
     solver.plot_centerline_velocity()
