@@ -2,8 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 
-from A4_Test import max_inner_iteration_uv
-
 
 class solver:
     def __init__(self, nx, ny, Re, problem_type):
@@ -48,10 +46,6 @@ class solver:
         self.u_face = np.zeros((ny + 2, nx + 2), dtype=np.float64)
         self.v_face = np.zeros((ny + 2, nx + 2), dtype=np.float64)
 
-        # D coefficients
-        self.d_u = np.ones((ny, nx)) * 1e-10
-        self.d_v = np.ones((ny, nx)) * 1e-10
-
         # Under relaxation variables
         self.alpha_uv = 0.7
         self.alpha_p = 0.3
@@ -66,7 +60,12 @@ class solver:
         self.solid_mask = np.zeros((self.nx, self.ny), dtype=bool)
         self._setup_geometry()
 
-        self._apply_bc()
+        # Boundary Conditions
+        self.u[0, 1:self.nx + 1] = 1.0
+        self.u_star[0, 1:self.nx + 1] = 1.0
+        self.u_face[0, 1:self.nx] = 1.0
+
+        # self._apply_bc()
 
     def _setup_geometry(self):
         if self.problem_type == 'cavity':
@@ -187,8 +186,8 @@ class solver:
                 self.a_s[i,j] = Ds + max(0.0, Fs)
                 self.a_p[i,j] = self.a_e[i,j] + self.a_w[i,j] + self.a_n[i,j] + self.a_s[i,j] + (Fe - Fw) + (Fn - Fs)
                 # Source Terms - Equations 17, 18
-                self.b_u[i,j] = 0.5 * (self.p[i, j - 1] - self.p[i, j + 1]) * self.dy
-                self.b_v[i,j] = 0.5 * (self.p[i + 1, j] - self.p[i - 1, j]) * self.dx
+                self.b_u[i,j] = 0.5 * (self.p[i, j - 1] - self.p[i, j + 1]) * self.dx
+                self.b_v[i,j] = 0.5 * (self.p[i + 1, j] - self.p[i - 1, j]) * self.dy
 
         # Now look at the Left Wall only. No corners
         j_l = 1
@@ -202,8 +201,8 @@ class solver:
             self.a_s[i_l,j_l] = Ds + max(0.0, Fs)
             self.a_p[i_l,j_l] = self.a_e[i_l,j_l] + self.a_w[i_l,j_l] + self.a_n[i_l,j_l] + self.a_s[i_l,j_l] + (Fe - Fw) + (Fn - Fs)
             # Source Terms - Equations 17, 18. Modified as edge case
-            self.b_u[i_l, j_l] = 0.5 * (self.p[i_l, j_l] - self.p[i_l, j_l + 1]) * self.dy
-            self.b_v[i_l, j_l] = 0.5 * (self.p[i_l + 1, j_l] - self.p[i_l - 1, j_l]) * self.dx
+            self.b_u[i_l, j_l] = 0.5 * (self.p[i_l, j_l - 1] - self.p[i_l, j_l + 1]) * self.dx
+            self.b_v[i_l, j_l] = 0.5 * (self.p[i_l + 1, j_l] - self.p[i_l - 1, j_l]) * self.dy
 
         # Bottom Wall. No corners
         i_b = self.ny
@@ -217,8 +216,8 @@ class solver:
             self.a_s[i_b,j_b] = 2 * Ds + max(0.0, Fs)
             self.a_p[i_b,j_b] = self.a_e[i_b,j_b] + self.a_w[i_b,j_b] + self.a_n[i_b,j_b] + self.a_s[i_b,j_b] + (Fe - Fw) + (Fn - Fs)
             # Source Terms - Equation 17, 18. Modified as edge case
-            self.b_u[i_b,j_b] = 0.5 * (self.p[i_b,j_b - 1] - self.p[i_b, j_b + 1]) * self.dy
-            self.b_v[i_b,j_b] = 0.5 * (self.p[i_b,j_b] - self.p[i_b - 1, j_b]) * self.dx
+            self.b_u[i_b,j_b] = 0.5 * (self.p[i_b,j_b - 1] - self.p[i_b, j_b + 1]) * self.dx
+            self.b_v[i_b,j_b] = 0.5 * (self.p[i_b - 1,j_b] - self.p[i_b + 1, j_b]) * self.dy
 
         # Right Wall. No Corners
         j_r = self.nx
@@ -232,8 +231,8 @@ class solver:
             self.a_s[i_r,j_r] = Ds + max(0.0, Fs)
             self.a_p[i_r, j_r] = self.a_e[i_r, j_r] + self.a_w[i_r, j_r] + self.a_n[i_r, j_r] + self.a_s[i_r, j_r] + (Fe - Fw) + (Fn - Fs)
             # Source Terms - Equation 17, 18. Modified as edge case
-            self.b_u[i_r, j_r] = 0.5 * (self.p[i_r, j_r - 1] - self.p[i_r, j_r]) * self.dy
-            self.b_v[i_r, j_r] = 0.5 * (self.p[i_r + 1, j_r] - self.p[i_r - 1, j_r]) * self.dx
+            self.b_u[i_r, j_r] = 0.5 * (self.p[i_r, j_r - 1] - self.p[i_r, j_r]) * self.dx
+            self.b_v[i_r, j_r] = 0.5 * (self.p[i_r + 1, j_r] - self.p[i_r - 1, j_r]) * self.dy
 
         # Top Wall. No Corners.
         i_t = 1
@@ -247,8 +246,8 @@ class solver:
             self.a_s[i_t, j_t] = Ds + max(0.0, Fs)
             self.a_p[i_t, j_t] = self.a_e[i_t, j_t] + self.a_w[i_t, j_t] + self.a_n[i_t, j_t] + self.a_s[i_t, j_t] + (Fe - Fw) + (Fn - Fs)
             # Source Terms - Equation 17, 18
-            self.b_u[i_t, j_t] = 0.5 * (self.p[i_t, j_t - 1] - self.p[i_t, j_t + 1]) * self.dy
-            self.b_v[i_t, j_t] = 0.5 * (self.p[i_t + 1, j_t] - self.p[i_t, j_t]) * self.dx
+            self.b_u[i_t, j_t] = 0.5 * (self.p[i_t, j_t - 1] - self.p[i_t, j_t + 1]) * self.dx
+            self.b_v[i_t, j_t] = 0.5 * (self.p[i_t + 1, j_t] - self.p[i_t, j_t]) * self.dy
 
         # Top Left Corner
         i_tl = 1
@@ -262,8 +261,8 @@ class solver:
         self.a_s[i_tl, j_tl] = Ds + max(0.0, Fs)
         self.a_p[i_tl, j_tl] = self.a_e[i_tl, j_tl] + self.a_w[i_tl, j_tl] + self.a_n[i_tl, j_tl] + self.a_s[i_tl, j_tl] + (Fe - Fw) + (Fn - Fs)
         # Source Terms - Equation 17, 18
-        self.b_u[i_tl, j_tl] = 0.5 * (self.p[i_tl, j_tl] - self.p[i_tl, j_tl + 1]) * self.dy
-        self.b_v[i_tl, j_tl] = 0.5 * (self.p[i_tl + 1, j_tl] - self.p[i_tl, j_tl]) * self.dx
+        self.b_u[i_tl, j_tl] = 0.5 * (self.p[i_tl, j_tl] - self.p[i_tl, j_tl + 1]) * self.dx
+        self.b_v[i_tl, j_tl] = 0.5 * (self.p[i_tl + 1, j_tl] - self.p[i_tl, j_tl]) * self.dy
 
         # Top Right Corner
         i_tr = 1
@@ -277,8 +276,8 @@ class solver:
         self.a_s[i_tr, j_tr] = Ds + max(0.0, Fs)
         self.a_p[i_tr, j_tr] = self.a_e[i_tr, j_tr] + self.a_w[i_tr, j_tr] + self.a_n[i_tr, j_tr] + self.a_s[i_tr, j_tr] + (Fe - Fw) + (Fn - Fs)
         # Source Terms - Equation 17, 18
-        self.b_u[i_tr, j_tr] = 0.5 * (self.p[i_tr, j_tr - 1] - self.p[i_tr, j_tr]) * self.dy
-        self.b_v[i_tr, j_tr] = 0.5 * (self.p[i_tr + 1, j_tr] - self.p[i_tr, j_tr]) * self.dx
+        self.b_u[i_tr, j_tr] = 0.5 * (self.p[i_tr, j_tr - 1] - self.p[i_tr, j_tr]) * self.dx
+        self.b_v[i_tr, j_tr] = 0.5 * (self.p[i_tr + 1, j_tr] - self.p[i_tr, j_tr]) * self.dy
 
         # Bottom Left Corner
         i_bl = self.ny
@@ -292,8 +291,8 @@ class solver:
         self.a_s[i_bl, j_bl] = Ds + max(0.0, Fs)
         self.a_p[i_bl, j_bl] = self.a_e[i_bl, j_bl] + self.a_w[i_bl, j_bl] + self.a_n[i_bl, j_bl] + self.a_s[i_bl, j_bl] + (Fe - Fw) + (Fn - Fs)
         # Source Terms - Equation 17, 18
-        self.b_u[i_bl, j_bl] = 0.5 * (self.p[i_bl, j_bl] - self.p[i_bl, j_bl + 1]) * self.dy
-        self.b_v[i_bl, j_bl] = 0.5 * (self.p[i_bl, j_bl] - self.p[i_bl - 1, j_bl]) * self.dx
+        self.b_u[i_bl, j_bl] = 0.5 * (self.p[i_bl, j_bl] - self.p[i_bl, j_bl + 1]) * self.dx
+        self.b_v[i_bl, j_bl] = 0.5 * (self.p[i_bl, j_bl] - self.p[i_bl - 1, j_bl]) * self.dy
 
         # Bottom Right Corner
         i_br = self.ny
@@ -305,10 +304,10 @@ class solver:
         self.a_w[i_br, j_br] = 2 * Dw + max(0.0, Fw)
         self.a_n[i_br, j_br] = 2 * Dn + max(0.0, -Fn)
         self.a_s[i_br, j_br] = Ds + max(0.0, Fs)
-        self.a_p[i_br, j_br] = self.a_e[i_br, j_br] + self.a_w[i_br, j_br] + self.a_n[i_br, j_tl] + self.a_s[i_br, j_tl] + (Fe - Fw) + (Fn - Fs)
+        self.a_p[i_br, j_br] = self.a_e[i_br, j_br] + self.a_w[i_br, j_br] + self.a_n[i_br, j_br] + self.a_s[i_br, j_br] + (Fe - Fw) + (Fn - Fs)
         # Source Terms - Equation 17, 18
-        self.b_u[i_br, j_br] = 0.5 * (self.p[i_br, j_br] - self.p[i_br, j_br + 1]) * self.dy
-        self.b_v[i_br, j_br] = 0.5 * (self.p[i_br, j_br] - self.p[i_br - 1, j_br]) * self.dx
+        self.b_u[i_br, j_br] = 0.5 * (self.p[i_br, j_br] - self.p[i_br, j_br + 1]) * self.dx
+        self.b_v[i_br, j_br] = 0.5 * (self.p[i_br, j_br] - self.p[i_br - 1, j_br]) * self.dy
 
 
     def _solve_uv_matrix(self):
@@ -337,7 +336,7 @@ class solver:
                 # Inner iteration residual has converged (Gauss-Seidel iterations)
                 break
 
-        for n_v in range(1, max_inner_iteration_uv + 1):
+        for n_v in range(1, self.max_iterations + 1):
             error_v = 0
             for i in range(1, self.ny + 1):
                 for j in range(1, self.nx + 1):
@@ -361,7 +360,18 @@ class solver:
 
         return norm_u, norm_v
 
-    def pressure_correction(self):
+    def _face_velocity(self):
+        for i in range(1, self.ny + 1):
+            for j in range(1, self.nx):
+                # U face velocity (R-C)
+                self.u_face[i,j] = 0.5 * (self.u[i,j] + self.u[i,j+1]) + 0.25 * self.alpha_uv * (self.p[i,j+1] - self.p[i,j-1]) * self.dy / self.a_p[i,j] + 0.25 * self.alpha_uv * (self.p[i,j+2] - self.p[i,j]) * self.dy / self.a_p[i,j+1] - 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i,j+1]) * (self.p[i,j+1] - self.p[i,j]) * self.dy
+        for i in range(2, self.ny + 1):
+            for j in range(1, self.nx + 1):
+                self.v_face[i-1,j] = 0.5 * (self.v[i,j] + self.v[i-1,j]) + 0.25 * self.alpha_uv * (self.p[i-1,j] - self.p[i+1,j]) * self.dx / self.a_p[i,j] + 0.25 * self.alpha_uv * (self.p[i-2,j] - self.p[i,j]) * self.dx / self.a_p[i-1,j] - 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i-1,j]) * (self.p[i-1,j] - self.p[i,j]) * self.dx
+
+
+
+    def _pressure_correction(self):
         # start with interior cells only.
         for i in range(2, self.ny):
             for j in range(2, self.nx):
@@ -369,9 +379,9 @@ class solver:
                 self.Ap_w[i,j] = 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i,j-1]) * (self.dy **2)
                 self.Ap_n[i,j] = 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i-1,j]) * (self.dx **2)
                 self.Ap_s[i,j] = 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i+1,j]) * (self.dx **2)
-                self.Ap_p[i,j] = self.Ap_e[i,j] + self.Ap_w[i,j] + self.Ap_n[i,j] + self.Ap_s[i,j] + self.Ap_s[i,j]
+                self.Ap_p[i,j] = self.Ap_e[i,j] + self.Ap_w[i,j] + self.Ap_n[i,j] + self.Ap_s[i,j]
 
-                self.b_p[i,j] = -(self.u_face[i,j] - self.u_face[i,j-1]) * self.dy - (self.v_face[i-1,j] - self.v_face[i,j]) * self.dx
+                self.b_p[i,j] = -(self.u_face[i,j] - self.u_face[i,j-1]) * self.dy - (self.v_face[i,j] - self.v_face[i-1,j]) * self.dx
 
         # top boundary. no corners
         i_t = 1
@@ -380,9 +390,9 @@ class solver:
             self.Ap_w[i_t, j_t] = 0.5 * self.alpha_uv * (1 / self.a_p[i_t, j_t] + 1 / self.a_p[i_t, j_t - 1]) * (self.dy ** 2)
             self.Ap_n[i_t, j_t] = 0
             self.Ap_s[i_t, j_t] = 0.5 * self.alpha_uv * (1 / self.a_p[i_t, j_t] + 1 / self.a_p[i_t + 1, j_t]) * (self.dx ** 2)
-            self.Ap_p[i_t, j_t] = self.Ap_e[i_t, j_t] + self.Ap_w[i_t, j_t] + self.Ap_n[i_t, j_t] + self.Ap_s[i_t, j_t] + self.Ap_s[i_t, j_t]
+            self.Ap_p[i_t, j_t] = self.Ap_e[i_t, j_t] + self.Ap_w[i_t, j_t] + self.Ap_n[i_t, j_t] + self.Ap_s[i_t, j_t]
 
-            self.b_p[i_t, j_t] = -(self.u_face[i_t, j_t] - self.u_face[i_t, j_t - 1]) * self.dy - (self.v_face[i_t - 1, j_t] - self.v_face[i_t, j_t]) * self.dx
+            self.b_p[i_t, j_t] = -(self.u_face[i_t, j_t] - self.u_face[i_t, j_t - 1]) * self.dy - (self.v_face[i_t, j_t] - self.v_face[i_t - 1, j_t]) * self.dx
 
         # left boundary. no corners
         j_l = 1
@@ -391,9 +401,9 @@ class solver:
             self.Ap_w[i_l, j_l] = 0
             self.Ap_n[i_l, j_l] = 0.5 * self.alpha_uv * (1 / self.a_p[i_l, j_l] + 1 / self.a_p[i_l - 1, j_l]) * (self.dx ** 2)
             self.Ap_s[i_l, j_l] = 0.5 * self.alpha_uv * (1 / self.a_p[i_l, j_l] + 1 / self.a_p[i_l + 1, j_l]) * (self.dx ** 2)
-            self.Ap_p[i_l, j_l] = self.Ap_e[i_l, j_l] + self.Ap_w[i_l, j_l] + self.Ap_n[i_l, j_l] + self.Ap_s[i_l, j_l] + self.Ap_s[i_l, j_l]
+            self.Ap_p[i_l, j_l] = self.Ap_e[i_l, j_l] + self.Ap_w[i_l, j_l] + self.Ap_n[i_l, j_l] + self.Ap_s[i_l, j_l]
 
-            self.b_p[i_l, j_l] = -(self.u_face[i_l, j_l] - self.u_face[i_l, j_l - 1]) * self.dy - (self.v_face[i_l - 1, j_l] - self.v_face[i_l, j_l]) * self.dx
+            self.b_p[i_l, j_l] = -(self.u_face[i_l, j_l] - self.u_face[i_l, j_l - 1]) * self.dy - (self.v_face[i_l, j_l] - self.v_face[i_l - 1, j_l]) * self.dx
 
         # right boundary. no corners
         j_r = self.nx
@@ -402,9 +412,9 @@ class solver:
             self.Ap_w[i_r, j_r] = 0.5 * self.alpha_uv * (1 / self.a_p[i_r, j_r] + 1 / self.a_p[i_r, j_r + 1]) * (self.dy ** 2)
             self.Ap_n[i_r, j_r] = 0.5 * self.alpha_uv * (1 / self.a_p[i_r, j_r] + 1 / self.a_p[i_r - 1, j_r]) * (self.dx ** 2)
             self.Ap_s[i_r, j_r] = 0.5 * self.alpha_uv * (1 / self.a_p[i_r, j_r] + 1 / self.a_p[i_r + 1, j_r]) * (self.dx ** 2)
-            self.Ap_p[i_r, j_r] = self.Ap_e[i_r, j_r] + self.Ap_w[i_r, j_r] + self.Ap_n[i_r, j_r] + self.Ap_s[i_r, j_r] + self.Ap_s[i_r, j_r]
+            self.Ap_p[i_r, j_r] = self.Ap_e[i_r, j_r] + self.Ap_w[i_r, j_r] + self.Ap_n[i_r, j_r] + self.Ap_s[i_r, j_r]
 
-            self.b_p[i_r, j_r] = -(self.u_face[i_r, j_r] - self.u_face[i_r, j_r - 1]) * self.dy - (self.v_face[i_r - 1, j_r] - self.v_face[i_r, j_r]) * self.dx
+            self.b_p[i_r, j_r] = -(self.u_face[i_r, j_r] - self.u_face[i_r, j_r - 1]) * self.dy - (self.v_face[i_r, j_r] - self.v_face[i_r - 1, j_r]) * self.dx
 
         # bottom boundary. no corners
         i_b = self.ny
@@ -413,11 +423,55 @@ class solver:
             self.Ap_w[i_b, j_b] = 0.5 * self.alpha_uv * (1 / self.a_p[i_b, j_b] + 1 / self.a_p[i_b, j_b + 1]) * (self.dy ** 2)
             self.Ap_n[i_b, j_b] = 0.5 * self.alpha_uv * (1 / self.a_p[i_b, j_b] + 1 / self.a_p[i_b - 1, j_b]) * (self.dx ** 2)
             self.Ap_s[i_b, j_b] = 0
-            self.Ap_p[i_b, j_b] = self.Ap_e[i_b, j_b] + self.Ap_w[i_b, j_b] + self.Ap_n[i_b, j_b] + self.Ap_s[i_b, j_b] + self.Ap_s[i_b, j_b]
+            self.Ap_p[i_b, j_b] = self.Ap_e[i_b, j_b] + self.Ap_w[i_b, j_b] + self.Ap_n[i_b, j_b] + self.Ap_s[i_b, j_b]
 
-            self.b_p[i_b, j_b] = -(self.u_face[i_b, j_b] - self.u_face[i_b, j_b - 1]) * self.dy - (self.v_face[i_b - 1, j_b] - self.v_face[i_b, j_b]) * self.dx
+            self.b_p[i_b, j_b] = -(self.u_face[i_b, j_b] - self.u_face[i_b, j_b - 1]) * self.dy - (self.v_face[i_b, j_b] - self.v_face[i_b - 1, j_b]) * self.dx
 
-    def correct_face_velocity(self):
+        # Top Left Corner
+        i_tl = 1
+        j_tl = 1
+        self.Ap_e[i_tl, j_tl] = 0.5 * self.alpha_uv * (1 / self.a_p[i_tl, j_tl] + 1 / self.a_p[i_tl, j_tl + 1]) * (self.dy ** 2)
+        self.Ap_w[i_tl, j_tl] = 0
+        self.Ap_n[i_tl, j_tl] = 0
+        self.Ap_s[i_tl, j_tl] = 0.5 * self.alpha_uv * (1 / self.a_p[i_tl, j_tl] + 1 / self.a_p[i_tl - 1, j_tl]) * (self.dx ** 2)
+        self.Ap_p[i_tl, j_tl] = self.Ap_e[i_tl, j_tl] + self.Ap_w[i_tl, j_tl] + self.Ap_n[i_tl, j_tl] + self.Ap_s[i_tl, j_tl]
+
+        self.b_p[i_tl, j_tl] = -(self.u_face[i_tl, j_tl] - self.u_face[i_tl, j_tl - 1]) * self.dy - (self.v_face[i_tl, j_tl] - self.v_face[i_tl - 1, j_tl]) * self.dx
+
+        # Top Right Corner
+        i_tr = 1
+        j_tr = self.nx
+        self.Ap_e[i_tr, j_tr] = 0
+        self.Ap_w[i_tr, j_tr] = 0.5 * self.alpha_uv * (1 / self.a_p[i_tr, j_tr] + 1 / self.a_p[i_tr, j_tr + 1]) * (self.dy ** 2)
+        self.Ap_n[i_tr, j_tr] = 0
+        self.Ap_s[i_tr, j_tr] = 0.5 * self.alpha_uv * (1 / self.a_p[i_tr, j_tr] + 1 / self.a_p[i_tr - 1, j_tr]) * (self.dx ** 2)
+        self.Ap_p[i_tr, j_tr] = self.Ap_e[i_tr, j_tr] + self.Ap_w[i_tr, j_tr] + self.Ap_n[i_tr, j_tr] + self.Ap_s[i_tr, j_tr]
+
+        self.b_p[i_tr, j_tr] = -(self.u_face[i_tr, j_tr] - self.u_face[i_tr, j_tr - 1]) * self.dy - (self.v_face[i_tr, j_tr] - self.v_face[i_tr - 1, j_tr]) * self.dx
+
+        # Bottom Left Corner
+        i_bl = self.ny
+        j_bl = 1
+        self.Ap_e[i_bl, j_bl] = 0.5 * self.alpha_uv * (1 / self.a_p[i_bl, j_bl] + 1 / self.a_p[i_bl, j_bl + 1]) * (self.dy ** 2)
+        self.Ap_w[i_bl, j_bl] = 0
+        self.Ap_n[i_bl, j_bl] = 0.5 * self.alpha_uv * (1 / self.a_p[i_bl, j_bl] + 1 / self.a_p[i_bl - 1, j_bl]) * (self.dx ** 2)
+        self.Ap_s[i_bl, j_bl] = 0
+        self.Ap_p[i_bl, j_bl] = self.Ap_e[i_bl, j_bl] + self.Ap_w[i_bl, j_bl] + self.Ap_n[i_bl, j_bl] + self.Ap_s[i_bl, j_bl]
+
+        self.b_p[i_bl, j_bl] = -(self.u_face[i_bl, j_bl] - self.u_face[i_bl, j_bl - 1]) * self.dy - (self.v_face[i_bl, j_bl] - self.v_face[i_bl - 1, j_bl]) * self.dx
+
+        # Bottom Right Corner
+        i_br = self.ny
+        j_br = self.nx
+        self.Ap_e[i_br, j_br] = 0.5 * self.alpha_uv * (1 / self.a_p[i_br, j_br] + 1 / self.a_p[i_br, j_br + 1]) * (self.dy ** 2)
+        self.Ap_w[i_br, j_br] = 0
+        self.Ap_n[i_br, j_br] = 0.5 * self.alpha_uv * (1 / self.a_p[i_br, j_br] + 1 / self.a_p[i_br - 1, j_br]) * (self.dx ** 2)
+        self.Ap_s[i_br, j_br] = 0
+        self.Ap_p[i_br, j_br] = self.Ap_e[i_br, j_br] + self.Ap_w[i_br, j_br] + self.Ap_n[i_br, j_br] + self.Ap_s[i_br, j_br]
+
+        self.b_p[i_br, j_br] = -(self.u_face[i_br, j_br] - self.u_face[i_br, j_br - 1]) * self.dy - (self.v_face[i_br, j_br] - self.v_face[i_br - 1, j_br]) * self.dx
+
+    def _correct_face_velocity(self):
         for i in range(1, self.ny + 1):
             for j in range(1, self.nx):
                 self.u_face[i,j] = self.u_face[i,j] + 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i,j+1]) * (self.p_prime[i,j] - self.p_prime[i, j+1]) * self.dy
@@ -426,12 +480,107 @@ class solver:
             for j in range (1, self.nx + 1):
                 self.v_face[i-1,j] = self.v_face[i-1,j] + 0.5 * self.alpha_uv * (1 / self.a_p[i,j] + 1 / self.a_p[i-1,j]) * (self.p_prime[i,j] - self.p_prime[i-1,j]) * self.dx
 
+    def _solve_p_matrix(self): # unrelaxed, alpha_p = 1
+        for n_p in range(1, self.max_iterations + 1):
+            error_p = 0
+            for i in range(1, self.ny + 1):
+                for j in range(1, self.nx + 1):
+                    self.p[i,j] = (
+                            self.a_e[i,j] * self.p[i, j + 1] +
+                            self.a_w[i,j] * self.p[i,j-1] +
+                            self.a_n[i,j] * self.p[i-1,j] +
+                            self.a_s[i,j] * self.p[i+1,j] +
+                            self.b_p[i,j]) / self.a_p[i,j]
+                    error_p += (self.p[i,j] - 1 * (
+                            self.a_e[i, j] * self.p[i, j + 1] +
+                            self.a_w[i, j] * self.p[i, j - 1] +
+                            self.a_n[i, j] * self.p[i - 1, j] +
+                            self.a_s[i, j] * self.p[i + 1, j] +
+                            self.b_p[i, j]) / self.a_p[i, j])
+
+            if n_p == 1: # Outer Iteration Metric for SIMPLE
+                norm_p = math.sqrt(error_p)
+            error_p = math.sqrt(error_p)
+
+            if error_p < self.tolerance:
+                # Inner iteration residual has converged (Gauss-Seidel iterations)
+                break
+        return norm_p
+
+    def _correct_pressure(self):
+        self.p_star = self.p + self.alpha_p * self.p_prime
+        # BC
+        # top wall. no corners
+        self.p_star[0, 1:self.nx + 1] = self.p_star[1, 1:self.nx + 1]
+        # left wall. no corners
+        self.p_star[1:self.ny + 1, 0] = self.p_star[1:self.ny + 1, 1]
+        # right wall. no corners
+        self.p_star[1:self.ny + 1, self.nx + 1] = self.p_star[1:self.ny + 1, self.nx]
+        # bottom wall. no corners
+        self.p_star[self.ny + 1, 1:self.nx + 1] = self.p_star[self.ny, 1:self.nx + 1]
+        # top left corner
+        self.p_star[0,0] = (self.p_star[1,2] + self.p_star[0,1] + self.p_star[1,0]) / 3
+        # top right corner
+        self.p_star[0, self.nx + 1] = (self.p_star[0, self.nx] + self.p_star[1, self.nx] + self.p_star[1, self.nx + 1]) / 3
+        # bottom left corner
+        self.p_star[self.ny + 1, 0] = (self.p_star[self.ny, 0] + self.p_star[self.ny, 1] + self.p_star[self.ny + 1, 1]) / 3
+        # bottom right corner
+        self.p_star[self.ny + 1, self.nx + 1] = (self.p_star[self.ny, self.nx + 1] + self.p_star[self.ny + 1, self.nx] + self.p_star[self.ny, self.nx]) / 3
+
+    def _correct_cell_center_vel(self):
+        # u velocity
+        # interior cells
+        for i in range(1, self.ny + 1):
+            for j in range(2, self.nx):
+                self.u_star[i,j] = self.u[i,j] + 0.5 * self.alpha_uv * (self.p_prime[i, j-1] - self.p_prime[i, j+1]) * self.dy / self.a_p[i,j]
+        # left boundary
+        j_l = 1
+        for i_l in range(1, self.ny + 1):
+            self.u_star[i_l, j_l] = self.u[i_l, j_l] + 0.5 * self.alpha_uv * (self.p_prime[i_l, j_l] - self.p_prime[i_l, j_l + 1]) * self.dy / self.a_p[i_l, j_l]
+        # right boundary
+        j_r = self.nx
+        for i_r in range(1, self.ny + 1):
+            self.u_star[i_r, j_r] = self.u[i_r, j_r] + 0.5 * self.alpha_uv * (self.p_prime[i_r, j_r - 1] - self.p_prime[i_r, j_r]) * self.dy / self.a_p[i_r, j_r]
+
+        # v velocity
+        # interior cells
+        for i in range(2, self.ny):
+            for j in range(1, self.nx + 1):
+                self.v_star[i,j] = self.v[i,j] + 0.5 * self.alpha_uv * (self.p_prime[i+1,j] - self.p_prime[i-1,j]) * self.dx / self.a_p[i,j]
+        # top boundary
+        i_t = 1
+        for j_t in range(1, self.nx + 1):
+            self.v_star[i_t, j_t] = self.v[i_t, j_t] + 0.5 * self.alpha_uv * (self.p_prime[i_t + 1, j_t] - self.p_prime[i_t, j_t]) * self.dx / self.a_p[i_t, j_t]
+        # bottom boundary
+        i_b = self.ny
+        for j_b in range(1, self.nx + 1):
+            self.v_star[i_b, j_b] = self.v[i_b, j_b] + 0.5 * self.alpha_uv * (self.p_prime[i_b, j_b] - self.p_prime[i_b - 1, j_b]) * self.dx / self.a_p[i_b, j_b]
+
     def SIMPLE(self):
         for n_simple in range(1, self.max_iterations + 1):
             self._solve_momentum()
             error_u, error_v = self._solve_uv_matrix()
-            print(f'Iteration {n_simple}: u:{error_u:.4f}, v:{error_v:.4f}')
-            self._correct_face_velocity
+            self._face_velocity()
+            self._pressure_correction()
+            error_p = self._solve_p_matrix()
+            self._correct_pressure()
+            self._correct_cell_center_vel()
+            self._correct_face_velocity()
+            self.p = np.copy(self.p_star)
+            print (f'Iteration: {n_simple}: u:{error_u:.4f}, v:{error_v:.4f}, p:{error_p:.4f}')
+            if (error_u < self.tolerance and error_v < self.tolerance and error_p < self.tolerance):
+                print(f"Converged on Iteration {n_simple}!")
+                self._streamline_plotting()
+
+    def _streamline_plotting(self):
+        plt.figure(1)
+        u_plot = np.flipud(self.u_star)
+        v_plot = np.flipud(self.v_star)
+        plt.streamplot(self.x, self.y, u_plot, v_plot,density=1.8, linewidth=1, arrowsize=1)
+        plt.title('Streamlines')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.show()
 
 
 if __name__ == "__main__":
@@ -439,6 +588,7 @@ if __name__ == "__main__":
 
     cavitySolve = solver(nx = 33, ny = 33, Re = 100, problem_type = 'cavity')
     cavitySolve.SIMPLE()
+
 
     #cavityStepSolve = solver(nx=33, ny=33, Re=100, problem_type='cavity_step')
     # backstepSolve = solver(nx = 33, ny=33, Re=100, problem_type='backstep')

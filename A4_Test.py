@@ -449,6 +449,20 @@ def post_processing(u_star, v_star, p_star, X, Y, x, y):
     plt.title('V centerline velocity')
     plt.show()
 
+    # streamlines
+    plt.figure(6)
+
+    # Flip velocity fields to match X,Y orientation like your contour plots
+    u_plot = np.flipud(u_star)
+    v_plot = np.flipud(v_star)
+
+    plt.streamplot(X, Y, u_plot, v_plot, density=1.8, linewidth=1, arrowsize=1)
+    plt.title('Streamlines')
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.show()
+
+
 
 # Declaring primitive variables
 u = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
