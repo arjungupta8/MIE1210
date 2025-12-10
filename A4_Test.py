@@ -6,8 +6,8 @@ np.set_printoptions(precision=3)
 import matplotlib.pyplot as plt
 import math
 
-n_x = 30
-n_y = 30
+n_x = 257
+n_y = 257
 
 dx = 1.0 / n_x
 dy = 1.0 / n_y
