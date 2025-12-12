@@ -1,11 +1,12 @@
 import numpy as np
 import sys
-import time
 
 # np.set_printoptions(linewidth=np.inf)
 # np.set_printoptions(precision=3)
 import matplotlib.pyplot as plt
 import math
+from scipy.interpolate import RectBivariateSpline
+import os
 
 # ---------------------------------------------------------------------------
 # Problem parameters
@@ -636,19 +637,119 @@ def post_processing(u_star, v_star, p_star, X, Y, x, y):
     plt.ylabel('y')
     plt.show()
 
+def fix_pressure_reference(p_prime):
+    """
+    Fix pressure at reference point to remove null space.
+    For lid-driven cavity, typically fix at a corner.
+    """
+    # Fix pressure at bottom-left interior point
+    p_ref = p_prime[n_y, 1]  # Store value at reference
+    p_prime[1:n_y+1, 1:n_x+1] -= p_ref  # Subtract from all interior
+    return p_prime
+
+
+def interpolate_solution_to_fine_grid(coarse_file, n_x_fine, n_y_fine):
+    """
+    Load coarse grid solution and interpolate to fine grid.
+    Returns initialized arrays for u, v, p with ghost cells.
+    """
+    # Load coarse solution
+    data = np.load(coarse_file)
+    u_coarse = data['u']
+    v_coarse = data['v']
+    p_coarse = data['p']
+    x_coarse = data['x']
+    y_coarse = data['y']
+
+    print(f"Loaded solution from {coarse_file}")
+    print(f"  Coarse grid: {u_coarse.shape[1]} x {u_coarse.shape[0]}")
+    print(f"  Fine grid: {n_x_fine} x {n_y_fine}")
+
+    # Create fine grid coordinates (interior only)
+    dx_fine = 1.0 / n_x_fine
+    dy_fine = 1.0 / n_y_fine
+    x_fine = np.linspace(dx_fine / 2, 1 - dx_fine / 2, n_x_fine)
+    y_fine = np.linspace(dy_fine / 2, 1 - dy_fine / 2, n_y_fine)
+
+    # Create interpolation functions using bicubic splines
+    # Note: y is first dimension (rows), x is second (columns)
+    interp_u = RectBivariateSpline(y_coarse, x_coarse, u_coarse, kx=3, ky=3)
+    interp_v = RectBivariateSpline(y_coarse, x_coarse, v_coarse, kx=3, ky=3)
+    interp_p = RectBivariateSpline(y_coarse, x_coarse, p_coarse, kx=3, ky=3)
+
+    # Interpolate to fine grid (interior)
+    u_fine_interior = interp_u(y_fine, x_fine)
+    v_fine_interior = interp_v(y_fine, x_fine)
+    p_fine_interior = interp_p(y_fine, x_fine)
+
+    # Create arrays with ghost cells
+    u_fine = np.zeros((n_y_fine + 2, n_x_fine + 2), dtype=np.float64)
+    v_fine = np.zeros((n_y_fine + 2, n_x_fine + 2), dtype=np.float64)
+    p_fine = np.zeros((n_y_fine + 2, n_x_fine + 2), dtype=np.float64)
+
+    # Fill interior cells
+    u_fine[1:-1, 1:-1] = u_fine_interior
+    v_fine[1:-1, 1:-1] = v_fine_interior
+    p_fine[1:-1, 1:-1] = p_fine_interior
+
+    # Apply boundary conditions
+    # Top wall: u = 1, v = 0
+    u_fine[0, 1:-1] = 1.0
+    v_fine[0, 1:-1] = 0.0
+
+    # Other walls: u = 0, v = 0 (no-slip)
+    u_fine[-1, 1:-1] = 0.0  # bottom
+    u_fine[1:-1, 0] = 0.0  # left
+    u_fine[1:-1, -1] = 0.0  # right
+
+    v_fine[-1, 1:-1] = 0.0  # bottom
+    v_fine[1:-1, 0] = 0.0  # left
+    v_fine[1:-1, -1] = 0.0  # right
+
+    print(f"Interpolation complete:")
+    print(f"  Max u: {np.abs(u_fine).max():.3e}")
+    print(f"  Max v: {np.abs(v_fine).max():.3e}")
+    print(f"  Max p: {np.abs(p_fine).max():.3e}")
+
+    return u_fine, v_fine, p_fine
+
+
 # ---------------------------------------------------------------------------
 # MAIN SETUP
 # ---------------------------------------------------------------------------
 
 # Primitive variables (with ghost cells)
-u = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
-u_star = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
+if os.path.exists('solution_65x65.npz'):
+    print("=" * 70)
+    print("INITIALIZING FROM COARSE GRID SOLUTION")
+    print("=" * 70)
 
-v = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
-v_star = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
+    # Interpolate coarse solution to fine grid
+    u, v, p = interpolate_solution_to_fine_grid('solution_65x65.npz', n_x, n_y)
 
-p_star = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
-p = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
+    # Also initialize u_star, v_star, p_star
+    u_star = np.copy(u)
+    v_star = np.copy(v)
+    p_star = np.copy(p)
+
+    # Face velocities will be computed in first iteration
+    # No need to interpolate them
+
+else:
+    print("No coarse solution found. Starting from zero initial guess.")
+    # Your existing initialization (all zeros)
+    u = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
+    v = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
+    p = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
+
+    u_star = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
+    v_star = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
+    p_star = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
+
+    # Lid boundary condition
+    u[0, 1:n_x + 1] = 1.0
+    u_star[0, 1:n_x + 1] = 1.0
+
 p_prime = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
 
 # Momentum link coefficients
@@ -696,28 +797,28 @@ l2_norm_x = 0.0
 l2_norm_y = 0.0
 l2_norm_p = 0.0
 
-alpha_uv = 0.25 # prev 0.25, 0.7
+alpha_uv = 0.2 # prev 0.25, 0.7
 epsilon_uv = 1e-4
-max_inner_iteration_uv = 50
+max_inner_iteration_uv = 100
 omega_uv = 1.0
 
-max_inner_iteration_p = 200
+max_inner_iteration_p = 500
 dummy_alpha_p = 1.0
-epsilon_p = 1e-4
-alpha_p = 0.04 # prev 0.1, 0.3
+epsilon_p = 1e-5
+alpha_p = 0.08 # prev 0.1, 0.3
 omega_p = 1.0
 
 max_outer_iteration = 2000
+
 
 # ---------------------------------------------------------------------------
 # SIMPLE outer loop
 # ---------------------------------------------------------------------------
 
-t_start = time.time()
-
 for n in range(1, max_outer_iteration + 1):
 
-    iter_start = time.time()
+    l2_norm_p_prev = l2_norm_p if n > 1 else 1.0
+
     A_p, A_e, A_w, A_n, A_s, source_x, source_y = momentum_link_coefficients(
         u_star, u_face, v_face, p, source_x, source_y, A_p, A_e, A_w, A_n, A_s
     )
@@ -748,7 +849,8 @@ for n in range(1, max_outer_iteration + 1):
         p_prime, p_prime, Ap_p, Ap_e, Ap_w, Ap_n, Ap_s,
         source_p, dummy_alpha_p, epsilon_p, max_inner_iteration_p, l2_norm_p, omega_p
     )
-
+    p_prime = fix_pressure_reference(p_prime)
+    print("sum(source_p = ", np.sum(source_p))
     # Correct pressure
     p_star = correct_pressure(p_star, p, p_prime, alpha_p)
 
@@ -760,17 +862,32 @@ for n in range(1, max_outer_iteration + 1):
 
     # Update pressure for next SIMPLE iteration
     p = np.copy(p_star)
-    iter_end = time.time()
-    iter_elapsed = iter_end - iter_start
-    print(f"Iter {n:4d}: l2_u = {l2_norm_x: .3e}, l2_v = {l2_norm_y: .3e}, l2_p = {l2_norm_p: .3e}, time = {iter_elapsed}")
 
-    if (l2_norm_x < 1e-4) and (l2_norm_y < 1e-4) and (l2_norm_p < 1e-4):
+    # if n % 50 == 0:
+    #     p_mean = p[1:n_y + 1, 1:n_x + 1].mean()
+    #    p[1:n_y + 1, 1:n_x + 1] -= p_mean
+
+    print(f"Iter {n:4d}: l2_u = {l2_norm_x: .3e}, l2_v = {l2_norm_y: .3e}, l2_p = {l2_norm_p: .3e}")
+
+    max_div = np.abs(source_p[1:n_y + 1, 1:n_x + 1]).max()
+    max_u = np.abs(u[1:n_y + 1, 1:n_x + 1]).max()
+    max_v = np.abs(v[1:n_y + 1, 1:n_x + 1]).max()
+    max_p = np.abs(p[1:n_y + 1, 1:n_x + 1]).max()
+
+    print(f"  Max div: {max_div:.3e}, Max u: {max_u:.3e}, "
+          f"Max v: {max_v:.3e}, Max p: {max_p:.3e}")
+
+    # Check for divergence
+    if max_u > 10 or max_v > 10 or max_p > 1000:
+        print("SOLUTION DIVERGING - stopping")
+        break
+
+    if (l2_norm_x < 1e-4) and (l2_norm_y < 1e-4) and (l2_norm_p < 1e-4) and (max_div < 1e-5):
         print("Converged!")
         break
 
 # ---------------------------------------------------------------------------
 # Post-processing
 # ---------------------------------------------------------------------------
-t_end = time.time()
-print(f"Time elapsed: {t_end - t_start}")
+
 post_processing(u_star, v_star, p_star, X, Y, x, y)
