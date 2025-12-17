@@ -7,11 +7,12 @@ import matplotlib.pyplot as plt
 import math
 from scipy.interpolate import RectBivariateSpline
 import os
+import time
 
 # ---------------------------------------------------------------------------
 # Problem parameters
 # ---------------------------------------------------------------------------
-
+time_start = time.time()
 n_x = 129
 n_y = 129
 
@@ -879,16 +880,16 @@ l2_norm_x = 0.0
 l2_norm_y = 0.0
 l2_norm_p = 0.0
 
-alpha_uv = 0.45 # prev 0.25, 0.7
+alpha_uv = 0.2 # prev 0.25, 0.7
 epsilon_uv = 1e-4
-max_inner_iteration_uv = 10
-omega_uv = 1.0
+max_inner_iteration_uv = 100
+omega_uv = 1.05
 
 max_inner_iteration_p = 500
 dummy_alpha_p = 1.0
 epsilon_p = 1e-5
-alpha_p = 0.2 # prev 0.1, 0.3
-omega_p = 1.0
+alpha_p = 0.1 # prev 0.1, 0.3
+omega_p = 1.05
 
 max_outer_iteration = 2000
 
@@ -898,6 +899,7 @@ max_outer_iteration = 2000
 # ---------------------------------------------------------------------------
 
 for n in range(1, max_outer_iteration + 1):
+    iter_start = time.time()
 
     l2_norm_p_prev = l2_norm_p if n > 1 else 1.0
     # alpha_uv, alpha_p, omega_uv, omega_p = get_relaxation_factors(n, l2_norm_p, l2_norm_p_prev)
@@ -955,8 +957,8 @@ for n in range(1, max_outer_iteration + 1):
     # if n % 50 == 0:
     #     p_mean = p[1:n_y + 1, 1:n_x + 1].mean()
     #     p[1:n_y + 1, 1:n_x + 1] -= p_mean
-
-    print(f"Iter {n:4d}: l2_u = {l2_norm_x: .3e}, l2_v = {l2_norm_y: .3e}, l2_p = {l2_norm_p: .3e}")
+    iter_end = time.time()
+    print(f"Iter {n:4d}: l2_u = {l2_norm_x: .3e}, l2_v = {l2_norm_y: .3e}, l2_p = {l2_norm_p: .3e}, time = {iter_end - iter_start}")
 
     max_div = np.abs(source_p[1:n_y + 1, 1:n_x + 1]).max()
     max_u = np.abs(u[1:n_y + 1, 1:n_x + 1]).max()
@@ -979,5 +981,7 @@ for n in range(1, max_outer_iteration + 1):
 # ---------------------------------------------------------------------------
 # Post-processing
 # ---------------------------------------------------------------------------
-
+time_end = time.time()
+total_time = time_end - time_start
+print(f'Total time: {total_time:.1f} seconds or {total_time/60} minutes')
 post_processing(u_star, v_star, p_star, X, Y, x, y)

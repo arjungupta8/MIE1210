@@ -26,7 +26,7 @@ class Solver:
         # Conservative relaxation
         self.alpha_u = 0.7
         self.alpha_v = 0.7
-        self.alpha_p = 0.3
+        self.alpha_p = 0.2
 
     def _setup_geometry(self):
         if self.problem_type == 'cavity':
@@ -391,64 +391,83 @@ class Solver:
                 div_max = max(div_max, div)
         return div_max
 
-    def plot_results(self, save_prefix=''):
+    def plot_results(self):
         X, Y = np.meshgrid(self.x, self.y)
+        nx, ny = self.nx, self.ny
 
-        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
-
-        im1 = axes[0, 0].contourf(X, Y, self.u, levels=20, cmap='RdBu_r')
-        axes[0, 0].set_title('U Velocity')
-        axes[0, 0].set_xlabel('x')
-        axes[0, 0].set_ylabel('y')
-        axes[0, 0].set_aspect('equal')
-        plt.colorbar(im1, ax=axes[0, 0])
-
-        im2 = axes[0, 1].contourf(X, Y, self.v, levels=20, cmap='RdBu_r')
-        axes[0, 1].set_title('V Velocity')
-        axes[0, 1].set_xlabel('x')
-        axes[0, 1].set_ylabel('y')
-        axes[0, 1].set_aspect('equal')
-        plt.colorbar(im2, ax=axes[0, 1])
-
-        im3 = axes[1, 0].contourf(X, Y, self.p, levels=20, cmap='RdBu_r')
-        axes[1, 0].set_title('Pressure')
-        axes[1, 0].set_xlabel('x')
-        axes[1, 0].set_ylabel('y')
-        axes[1, 0].set_aspect('equal')
-        plt.colorbar(im3, ax=axes[1, 0])
-
-        speed = np.sqrt(self.u ** 2 + self.v ** 2)
-        axes[1, 1].streamplot(X, Y, self.u, self.v, color=speed, cmap='jet', density=1.5)
-        axes[1, 1].set_title('Streamlines')
-        axes[1, 1].set_xlabel('x')
-        axes[1, 1].set_ylabel('y')
-        axes[1, 1].set_aspect('equal')
-
+        # ---------------- U velocity ----------------
+        plt.figure(figsize=(6, 5))
+        im = plt.contourf(X, Y, self.u, levels=20, cmap='RdBu_r')
+        plt.colorbar(im)
+        plt.title('U Velocity')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.gca().set_aspect('equal')
         plt.tight_layout()
-        if save_prefix:
-            plt.savefig(f'{save_prefix}_results.png', dpi=150)
+        plt.savefig(f'{nx}x{ny}-u_velocity-a4_claude.png', dpi=150)
+        plt.show()
+
+        # ---------------- V velocity ----------------
+        plt.figure(figsize=(6, 5))
+        im = plt.contourf(X, Y, self.v, levels=20, cmap='RdBu_r')
+        plt.colorbar(im)
+        plt.title('V Velocity')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.gca().set_aspect('equal')
+        plt.tight_layout()
+        plt.savefig(f'{nx}x{ny}-v_velocity-a4_claude.png', dpi=150)
+        plt.show()
+
+        # ---------------- Pressure ----------------
+        plt.figure(figsize=(6, 5))
+        im = plt.contourf(X, Y, self.p, levels=20, cmap='RdBu_r')
+        plt.colorbar(im)
+        plt.title('Pressure')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.gca().set_aspect('equal')
+        plt.tight_layout()
+        plt.savefig(f'{nx}x{ny}-pressure-a4_claude.png', dpi=150)
+        plt.show()
+
+        # ---------------- Streamlines ----------------
+        speed = np.sqrt(self.u ** 2 + self.v ** 2)
+        plt.figure(figsize=(6, 5))
+        plt.streamplot(X, Y, self.u, self.v, color=speed, cmap='jet', density=1.5)
+        plt.title('Streamlines')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.gca().set_aspect('equal')
+        plt.tight_layout()
+        plt.savefig(f'{nx}x{ny}-streamlines-a4_claude.png', dpi=150)
         plt.show()
 
     def plot_centerline_velocity(self):
-        j_center = self.ny // 2
-        i_center = self.nx // 2
+        nx, ny = self.nx, self.ny
+        j_center = ny // 2
+        i_center = nx // 2
 
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-
-        ax1.plot(self.u[:, i_center], self.y, 'b-', linewidth=2, label='Computed')
-        ax1.set_xlabel('U velocity')
-        ax1.set_ylabel('y')
-        ax1.set_title('U velocity along vertical centerline')
-        ax1.grid(True)
-        ax1.legend()
-
-        ax2.plot(self.x, self.v[j_center, :], 'r-', linewidth=2, label='Computed')
-        ax2.set_xlabel('x')
-        ax2.set_ylabel('V velocity')
-        ax2.set_title('V velocity along horizontal centerline')
-        ax2.grid(True)
-        ax2.legend()
+        # -------- Vertical centerline (U) --------
+        plt.figure(figsize=(6, 5))
+        plt.plot(self.u[:, i_center], self.y, 'b-', linewidth=2)
+        plt.xlabel('U velocity')
+        plt.ylabel('y')
+        plt.title('U velocity along vertical centerline')
+        plt.grid(True)
         plt.tight_layout()
+        plt.savefig(f'{nx}x{ny}-u_centerline-a4_claude.png', dpi=150)
+        plt.show()
+
+        # -------- Horizontal centerline (V) --------
+        plt.figure(figsize=(6, 5))
+        plt.plot(self.x, self.v[j_center, :], 'r-', linewidth=2)
+        plt.xlabel('x')
+        plt.ylabel('V velocity')
+        plt.title('V velocity along horizontal centerline')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(f'{nx}x{ny}-v_centerline-a4_claude.png', dpi=150)
         plt.show()
 
 
@@ -457,7 +476,7 @@ if __name__ == "__main__":
     print("Lid-driven cavity with Rhie-Chow Interpolation")
     print("=" * 60)
 
-    solver = Solver(nx=65, ny=65, Re=100, problem_type='cavity')
+    solver = Solver(nx=257, ny=257, Re=100, problem_type='cavity')
     solver.solve(dt=0.001, max_steps=50000, check_interval=100, tolerance=5e-5)
 
     solver.plot_results(save_prefix='cavity_Re100_rhie_chow')

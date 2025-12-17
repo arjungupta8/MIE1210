@@ -660,47 +660,6 @@ def fix_pressure_reference(p_prime):
     return p_prime
 
 
-def get_relaxation_factors(n, l2_norm_p, l2_norm_p_prev):
-    """Adaptive relaxation based on iteration count and convergence behavior"""
-
-    if n <= 30:
-        # Very conservative startup
-        alpha_uv = 0.5
-        alpha_p = 0.2
-        omega_uv = 1.0
-        omega_p = 1.0
-    elif n <= 100:
-        # Moderate relaxation
-        alpha_uv = 0.7
-        alpha_p = 0.3
-        omega_uv = 1.0
-        omega_p = 1.2
-    else:
-        # More aggressive once stable
-        # But back off if pressure residual increases
-        if l2_norm_p_prev > 0 and l2_norm_p > 1.2 * l2_norm_p_prev:
-            # Residual increased - reduce relaxation
-            alpha_uv = 0.6
-            alpha_p = 0.2
-            omega_uv = 1.0
-            omega_p = 1.0
-        else:
-            alpha_uv = 0.7
-            alpha_p = 0.4  # Can be more aggressive for pressure
-            omega_uv = 1.1
-            omega_p = 1.3
-
-    return alpha_uv, alpha_p, omega_uv, omega_p
-
-def momentum_predictor_step(u, v, u_star, v_star):
-    """
-    Extrapolate velocity from previous iterations
-    u^n+1 ≈ 2*u^n - u^n-1
-    """
-    u_pred = 1.5 * u - 0.5 * u_star
-    v_pred = 1.5 * v - 0.5 * v_star
-    return u_pred, v_pred
-
 
 def interpolate_solution_to_fine_grid(coarse_file, n_x_fine, n_y_fine):
     """
@@ -851,15 +810,15 @@ l2_norm_x = 0.0
 l2_norm_y = 0.0
 l2_norm_p = 0.0
 
-alpha_uv = 0.2 # prev 0.25, 0.7
-epsilon_uv = 1e-4
+alpha_uv = 0.1 # prev 0.25, 0.7
+epsilon_uv = 1e-5
 max_inner_iteration_uv = 50
 omega_uv = 1.0
 
 max_inner_iteration_p = 300
 dummy_alpha_p = 1.0
-epsilon_p = 1e-5
-alpha_p = 0.05 # prev 0.1, 0.3
+epsilon_p = 1e-6
+alpha_p = 0.02 # prev 0.1, 0.3
 omega_p = 1.0
 
 max_outer_iteration = 2000
@@ -873,12 +832,6 @@ for n in range(1, max_outer_iteration + 1):
 
     iter_start = time.time()
     l2_norm_p_prev = l2_norm_p if n > 1 else 1.0
-    # alpha_uv, alpha_p, omega_uv, omega_p = get_relaxation_factors(n, l2_norm_p, l2_norm_p_prev)
-
-    # if n > 2:
-    #     u_pred, v_pred = momentum_predictor_step(u, v, u_star, v_star)
-    #     u = 0.5 * u + 0.5 * u_pred  # Blend with predictor
-    #     v = 0.5 * v + 0.5 * v_pred
 
 
     A_p, A_e, A_w, A_n, A_s, source_x, source_y = momentum_link_coefficients(
@@ -912,6 +865,7 @@ for n in range(1, max_outer_iteration + 1):
         source_p, dummy_alpha_p, epsilon_p, max_inner_iteration_p, l2_norm_p, omega_p
     )
     p_prime = fix_pressure_reference(p_prime)
+
     print("sum(source_p = ", np.sum(source_p))
     # Correct pressure
     p_star = correct_pressure(p_star, p, p_prime, alpha_p)
@@ -925,9 +879,6 @@ for n in range(1, max_outer_iteration + 1):
     # Update pressure for next SIMPLE iteration
     p = np.copy(p_star)
 
-    # if n % 50 == 0:
-    #     p_mean = p[1:n_y + 1, 1:n_x + 1].mean()
-    #     p[1:n_y + 1, 1:n_x + 1] -= p_mean
     iter_end = time.time()
     print(f"Iter {n:4d}: l2_u = {l2_norm_x: .3e}, l2_v = {l2_norm_y: .3e}, l2_p = {l2_norm_p: .3e}, iter_time = {iter_end - iter_start:.3e}")
 

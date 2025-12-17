@@ -7,11 +7,12 @@ import matplotlib.pyplot as plt
 import math
 from scipy.interpolate import RectBivariateSpline
 import os
+import time
 
 # ---------------------------------------------------------------------------
 # Problem parameters
 # ---------------------------------------------------------------------------
-
+time_start = time.time()
 n_x = 129
 n_y = 129
 
@@ -59,7 +60,7 @@ def momentum_link_coefficients(u_star, u_face, v_face, p, source_x, source_y,
         (F_e - F_w) + (F_n - F_s)
     )
 
-    # pressure source terms (interior)
+    # pressure source terms (interior). Neighbouring node pressures
     p_w = p[i_int, slice(1, n_x - 1)]
     p_e = p[i_int, slice(3, n_x + 1)]
     p_s = p[slice(1, n_y - 1), j_int]
@@ -659,37 +660,56 @@ def fix_pressure_reference(p_prime):
     return p_prime
 
 
-def get_relaxation_factors(n, l2_norm_p, l2_norm_p_prev):
-    """Adaptive relaxation based on iteration count and convergence behavior"""
-
-    if n <= 30:
-        # Very conservative startup
-        alpha_uv = 0.5
-        alpha_p = 0.2
+def get_adaptive_relaxation(n_iter, max_div, max_p,
+                            l2_norm_p, l2_norm_p_prev):
+    """
+    Adaptive relaxation with safety checks.
+    """
+    # Phase 1: Very conservative startup
+    if n_iter <= 10:
+        alpha_uv = 0.25
+        alpha_p = 0.10
         omega_uv = 1.0
         omega_p = 1.0
-    elif n <= 100:
-        # Moderate relaxation
-        alpha_uv = 0.7
-        alpha_p = 0.3
+
+    # Phase 2: Gradual increase
+    elif n_iter <= 50:
+        alpha_uv = 0.35
+        alpha_p = 0.15
         omega_uv = 1.0
-        omega_p = 1.2
+        omega_p = 1.05
+
+    # Phase 3: Target values with monitoring
     else:
-        # More aggressive once stable
-        # But back off if pressure residual increases
-        if l2_norm_p_prev > 0 and l2_norm_p > 1.2 * l2_norm_p_prev:
-            # Residual increased - reduce relaxation
-            alpha_uv = 0.6
-            alpha_p = 0.2
+        alpha_uv = 0.40
+        alpha_p = 0.20
+        omega_uv = 1.1
+        omega_p = 1.15
+
+        # Safety overrides
+        if max_div > 1e-5:  # Divergence too large
+            alpha_uv *= 0.8
+            alpha_p *= 0.7
             omega_uv = 1.0
             omega_p = 1.0
-        else:
-            alpha_uv = 0.7
-            alpha_p = 0.4  # Can be more aggressive for pressure
-            omega_uv = 1.1
-            omega_p = 1.3
+
+        if max_p > 20:  # Pressure growing too large
+            alpha_p *= 0.5
+
+        if l2_norm_p_prev > 0 and l2_norm_p > 2 * l2_norm_p_prev:
+            # Pressure correction diverging
+            alpha_uv *= 0.7
+            alpha_p *= 0.5
+
+    # Hard limits
+    alpha_uv = np.clip(alpha_uv, 0.1, 0.5)
+    alpha_p = np.clip(alpha_p, 0.05, 0.25)
+    omega_uv = np.clip(omega_uv, 1.0, 1.3)
+    omega_p = np.clip(omega_p, 1.0, 1.3)
 
     return alpha_uv, alpha_p, omega_uv, omega_p
+
+
 
 def momentum_predictor_step(u, v, u_star, v_star):
     """
@@ -879,15 +899,15 @@ l2_norm_x = 0.0
 l2_norm_y = 0.0
 l2_norm_p = 0.0
 
-alpha_uv = 0.3 # prev 0.25, 0.7
-epsilon_uv = 1e-3
-max_inner_iteration_uv = 30
+alpha_uv = 0.4 # prev 0.25, 0.7
+epsilon_uv = 1e-4
+max_inner_iteration_uv = 100
 omega_uv = 1.0
 
-max_inner_iteration_p = 300
+max_inner_iteration_p = 800
 dummy_alpha_p = 1.0
-epsilon_p = 1e-5
-alpha_p = 0.1 # prev 0.1, 0.3
+epsilon_p = 1e-7
+alpha_p = 0.2 # prev 0.1, 0.3
 omega_p = 1.0
 
 max_outer_iteration = 2000
@@ -897,15 +917,17 @@ max_outer_iteration = 2000
 # SIMPLE outer loop
 # ---------------------------------------------------------------------------
 
+max_div_history = []
+l2_norm_p_prev = 1.0
+
 for n in range(1, max_outer_iteration + 1):
+    iter_start = time.time()
 
     l2_norm_p_prev = l2_norm_p if n > 1 else 1.0
-    # alpha_uv, alpha_p, omega_uv, omega_p = get_relaxation_factors(n, l2_norm_p, l2_norm_p_prev)
-
-#    if n > 2:
-#        u_pred, v_pred = momentum_predictor_step(u, v, u_star, v_star)
-#        u = 0.5 * u + 0.5 * u_pred  # Blend with predictor
-#        v = 0.5 * v + 0.5 * v_pred
+    alpha_uv, alpha_p, omega_uv, omega_p = get_adaptive_relaxation( n, max_div_history[-1] if max_div_history else 0,
+        np.abs(p[1:n_y+1, 1:n_x+1]).max(),
+        l2_norm_p, l2_norm_p_prev
+    )
 
 
     A_p, A_e, A_w, A_n, A_s, source_x, source_y = momentum_link_coefficients(
@@ -942,6 +964,8 @@ for n in range(1, max_outer_iteration + 1):
     print("sum(source_p = ", np.sum(source_p))
     # Correct pressure
     p_star = correct_pressure(p_star, p, p_prime, alpha_p)
+    # p_mean = p[1:n_y + 1, 1:n_x + 1].mean()
+    # p[1:n_y + 1, 1:n_x + 1] -= p_mean
 
     # Correct cell-centered velocities
     u_star, v_star = correct_cell_center_velocity(u, v, u_star, v_star, p_prime, A_p, alpha_uv)
@@ -955,8 +979,8 @@ for n in range(1, max_outer_iteration + 1):
     # if n % 50 == 0:
     #     p_mean = p[1:n_y + 1, 1:n_x + 1].mean()
     #     p[1:n_y + 1, 1:n_x + 1] -= p_mean
-
-    print(f"Iter {n:4d}: l2_u = {l2_norm_x: .3e}, l2_v = {l2_norm_y: .3e}, l2_p = {l2_norm_p: .3e}")
+    iter_end = time.time()
+    print(f"Iter {n:4d}: l2_u = {l2_norm_x: .3e}, l2_v = {l2_norm_y: .3e}, l2_p = {l2_norm_p: .3e}, time = {iter_end - iter_start}")
 
     max_div = np.abs(source_p[1:n_y + 1, 1:n_x + 1]).max()
     max_u = np.abs(u[1:n_y + 1, 1:n_x + 1]).max()
@@ -979,5 +1003,7 @@ for n in range(1, max_outer_iteration + 1):
 # ---------------------------------------------------------------------------
 # Post-processing
 # ---------------------------------------------------------------------------
-
+time_end = time.time()
+total_time = time_end - time_start
+print(f'Total time: {total_time:.1f} seconds or {total_time/60} minutes')
 post_processing(u_star, v_star, p_star, X, Y, x, y)
