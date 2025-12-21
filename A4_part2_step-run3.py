@@ -397,63 +397,166 @@ def correct_face_velocity(u_face, v_face, p_prime, A_p, alpha_uv, blocked):
 # Post-processing
 # ---------------------------------------------------------------------------
 
-def post_processing(u_star, v_star, p_star, X, Y, x, y, blocked):
-    u_interior = u_star[1:n_y + 1, 1:n_x + 1].copy()
-    v_interior = v_star[1:n_y + 1, 1:n_x + 1].copy()
-    p_interior = p_star[1:n_y + 1, 1:n_x + 1].copy()
-    blocked_interior = blocked[1:n_y + 1, 1:n_x + 1]
+def post_processing(u_star, v_star, p_star, X, Y, x, y, blocked,
+                    Re=None,
+                    step_x_fraction=None,
+                    step_y_fraction=None,
+                    save=False,
+                    prefix="cavity"):
+    """
+    Expanded post-processing to match reference implementation:
+    - Masks blocked cells
+    - Proper interior extraction
+    - U, V, P contours
+    - Centerline velocity plots
+    - Streamlines with solid step
+    """
 
-    # Mask blocked cells for plotting
-    u_masked = np.ma.masked_where(blocked_interior, u_interior)
-    v_masked = np.ma.masked_where(blocked_interior, v_interior)
-    p_masked = np.ma.masked_where(blocked_interior, p_interior)
+    # ------------------------------------------------------------------
+    # Extract interior (remove ghost cells)
+    # ------------------------------------------------------------------
+    u_int = u_star[1:n_y + 1, 1:n_x + 1].copy()
+    v_int = v_star[1:n_y + 1, 1:n_x + 1].copy()
+    p_int = p_star[1:n_y + 1, 1:n_x + 1].copy()
+    blocked_int = blocked[1:n_y + 1, 1:n_x + 1]
 
-    x_interior = x[1:n_x + 1]
-    y_interior = y[1:n_y + 1]
-    X_interior, Y_interior = np.meshgrid(x_interior, y_interior)
+    x_int = x[1:n_x + 1]
+    y_int = y[1:n_y + 1]
+    X_int, Y_int = np.meshgrid(x_int, y_int)
 
-    # Pressure contours
-    plt.figure(figsize=(8, 8))
-    plt.contourf(X_interior, Y_interior, np.flipud(p_masked), levels=50, cmap='jet')
-    plt.colorbar(label='Pressure')
+    # ------------------------------------------------------------------
+    # Mask blocked cells
+    # ------------------------------------------------------------------
+    u_masked = np.ma.masked_where(blocked_int, u_int)
+    v_masked = np.ma.masked_where(blocked_int, v_int)
+    p_masked = np.ma.masked_where(blocked_int, p_int)
 
-    # Draw step outline
-    step_x = step_x_fraction
-    step_y = step_y_fraction
-    plt.plot([0, step_x, step_x, 0, 0], [0, 0, step_y, step_y, 0], 'k-', linewidth=2)
+    # ==================================================================
+    # U velocity contours
+    # ==================================================================
+    plt.figure(figsize=(7, 6))
+    plt.contourf(X_int, Y_int, np.flipud(u_masked), levels=50, cmap='jet')
+    plt.colorbar(label='u')
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.title('U velocity contours')
+    plt.axis('equal')
+    plt.tight_layout()
+    if save:
+        plt.savefig(f"{prefix}_u_contours.png", dpi=200)
+    plt.show()
 
-    plt.title(f'Pressure Contours (Re={Re})')
+    # ==================================================================
+    # V velocity contours
+    # ==================================================================
+    plt.figure(figsize=(7, 6))
+    plt.contourf(X_int, Y_int, np.flipud(v_masked), levels=50, cmap='jet')
+    plt.colorbar(label='v')
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.title('V velocity contours')
+    plt.axis('equal')
+    plt.tight_layout()
+    if save:
+        plt.savefig(f"{prefix}_v_contours.png", dpi=200)
+    plt.show()
+
+    # ==================================================================
+    # Pressure contours + step outline
+    # ==================================================================
+    plt.figure(figsize=(7, 6))
+    plt.contourf(X_int, Y_int, np.flipud(p_masked), levels=50, cmap='jet')
+    plt.colorbar(label='p')
+
+    # Draw step geometry if provided
+    if step_x_fraction is not None and step_y_fraction is not None:
+        sx = step_x_fraction
+        sy = step_y_fraction
+        plt.plot([0, sx, sx, 0, 0],
+                 [0, 0, sy, sy, 0],
+                 'k-', linewidth=2)
+        plt.fill([0, sx, sx, 0],
+                 [0, 0, sy, sy],
+                 color='gray', alpha=0.3)
+
+    title = "Pressure contours"
+    if Re is not None:
+        title += f" (Re={Re})"
+    plt.title(title)
+
     plt.xlabel('x')
     plt.ylabel('y')
     plt.axis('equal')
     plt.tight_layout()
-    plt.savefig(f'cavity_step_pressure_{n_x}x{n_y}_Re{Re}.png', dpi=200)
+    if save:
+        plt.savefig(f"{prefix}_pressure_contours.png", dpi=200)
     plt.show()
 
-    # Streamlines
-    plt.figure(figsize=(8, 8))
+    # ==================================================================
+    # U centerline velocity (vertical mid-plane)
+    # ==================================================================
+    j_mid = n_x // 2
+    plt.figure()
+    plt.plot(1.0 - y_int, u_int[:, j_mid])
+    plt.xlabel('y')
+    plt.ylabel('u')
+    plt.title('U centerline velocity')
+    plt.grid(True)
+    if save:
+        plt.savefig(f"{prefix}_u_centerline.png", dpi=200)
+    plt.show()
+
+    # ==================================================================
+    # V centerline velocity (horizontal mid-plane)
+    # ==================================================================
+    i_mid = n_y // 2
+    plt.figure()
+    plt.plot(x_int, v_int[i_mid, :])
+    plt.xlabel('x')
+    plt.ylabel('v')
+    plt.title('V centerline velocity')
+    plt.grid(True)
+    if save:
+        plt.savefig(f"{prefix}_v_centerline.png", dpi=200)
+    plt.show()
+
+    # ==================================================================
+    # Streamlines (blocked cells zeroed)
+    # ==================================================================
+    plt.figure(figsize=(7, 6))
+
     u_plot = np.flipud(u_masked)
     v_plot = np.flipud(v_masked)
+    mask_plot = np.flipud(blocked_int)
 
-    # Create mask for streamplot
-    mask = np.flipud(blocked_interior)
-    u_plot_filled = np.where(mask, 0, u_plot)
-    v_plot_filled = np.where(mask, 0, v_plot)
+    u_filled = np.where(mask_plot, 0.0, u_plot)
+    v_filled = np.where(mask_plot, 0.0, v_plot)
 
-    plt.streamplot(X_interior, Y_interior, u_plot_filled, v_plot_filled,
-                   density=2.0, linewidth=1, arrowsize=1, color='b')
+    plt.streamplot(X_int, Y_int,
+                   u_filled, v_filled,
+                   density=2.0,
+                   linewidth=1.0,
+                   arrowsize=1.0)
 
-    # Draw step outline
-    plt.plot([0, step_x, step_x, 0, 0], [0, 0, step_y, step_y, 0], 'k-', linewidth=2)
-    plt.fill([0, step_x, step_x, 0], [0, 0, step_y, step_y], color='gray', alpha=0.3)
+    # Step outline again
+    if step_x_fraction is not None and step_y_fraction is not None:
+        plt.plot([0, sx, sx, 0, 0],
+                 [0, 0, sy, sy, 0],
+                 'k-', linewidth=2)
 
-    plt.title(f'Streamlines (Re={Re})')
+    title = "Streamlines"
+    if Re is not None:
+        title += f" (Re={Re})"
+    plt.title(title)
+
     plt.xlabel('x')
     plt.ylabel('y')
     plt.axis('equal')
     plt.tight_layout()
-    plt.savefig(f'cavity_step_streamlines_{n_x}x{n_y}_Re{Re}.png', dpi=200)
+    if save:
+        plt.savefig(f"{prefix}_streamlines.png", dpi=200)
     plt.show()
+
 
 
 def fix_pressure_reference(p_prime, blocked):
@@ -539,10 +642,10 @@ omega_uv = 0.8
 max_inner_iteration_p = 125
 dummy_alpha_p = 1.0
 epsilon_p = 1e-6
-alpha_p = 0.007
+alpha_p = 0.004
 omega_p = 0.8
 
-max_outer_iteration = 1000
+max_outer_iteration = 2000
 
 
 time_start = time.time()
@@ -636,5 +739,13 @@ np.savez(f'solution_cavity_step_{n_x}x{n_y}_Re{Re}.npz',
          blocked=blocked[1:n_y + 1, 1:n_x + 1],
          Re=Re)
 
-post_processing(u_star, v_star, p_star, X, Y, x, y, blocked)
+post_processing(
+    u_star, v_star, p_star,
+    X, Y, x, y, blocked,
+    Re=Re,
+    step_x_fraction=step_x_fraction,
+    step_y_fraction=step_y_fraction,
+    save=True,
+    prefix=f"cavity_step_{n_x}x{n_y}_Re{Re}"
+)
 

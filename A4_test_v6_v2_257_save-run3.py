@@ -863,10 +863,6 @@ for n in range(1, max_outer_iteration + 1):
     # Update pressure for next SIMPLE iteration
     p = np.copy(p_star)
 
-    # if n % 50 == 0:
-    #     p_mean = p[1:n_y + 1, 1:n_x + 1].mean()
-    #    p[1:n_y + 1, 1:n_x + 1] -= p_mean
-
     print(f"Iter {n:4d}: l2_u = {l2_norm_x: .3e}, l2_v = {l2_norm_y: .3e}, l2_p = {l2_norm_p: .3e}")
 
     max_div = np.abs(source_p[1:n_y + 1, 1:n_x + 1]).max()

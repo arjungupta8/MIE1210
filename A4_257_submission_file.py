@@ -1,78 +1,46 @@
+import os
 import numpy as np
-import sys
-
-# np.set_printoptions(linewidth=np.inf)
-# np.set_printoptions(precision=3)
 import matplotlib.pyplot as plt
 import math
 from scipy.interpolate import RectBivariateSpline
 import os
 import time
 
-# ---------------------------------------------------------------------------
-# Problem parameters
-# ---------------------------------------------------------------------------
-
-n_x = 257
-n_y = 257
-
-dx = 1.0 / n_x
-dy = 1.0 / n_y
-
-Re = 100
-
-# ---------------------------------------------------------------------------
-# Momentum link coefficients (A_p, A_e, A_w, A_n, A_s and sources)
-# ---------------------------------------------------------------------------
-
 def momentum_link_coefficients(u_star, u_face, v_face, p, source_x, source_y,
                                A_p, A_e, A_w, A_n, A_s):
-    """
-    Build momentum equation coefficients and source terms.
-    Interior cells are vectorized; boundaries/corners kept explicit.
-    """
 
+    # Diffusive Conductance Coefficients
     D_e = dy / (dx * Re)
     D_w = dy / (dx * Re)
     D_n = dx / (dy * Re)
     D_s = dx / (dy * Re)
-
-    # -------------------------------
-    # Interior cells: i=2..n_y-1, j=2..n_x-1 (vectorized)
-    # -------------------------------
+    # Interior cells
     i_int = slice(2, n_y)
     j_int = slice(2, n_x)
-
-    # Fluxes
+    # Convective Fluxes
     F_e = dy * u_face[i_int, j_int]
     F_w = dy * u_face[i_int, slice(1, n_x - 1)]
     F_n = dx * v_face[slice(1, n_y - 1), j_int]
     F_s = dx * v_face[i_int, j_int]
-
+    # Convective Coefficients
     A_e[i_int, j_int] = D_e + np.maximum(0.0, -F_e)
     A_w[i_int, j_int] = D_w + np.maximum(0.0,  F_w)
     A_n[i_int, j_int] = D_n + np.maximum(0.0, -F_n)
     A_s[i_int, j_int] = D_s + np.maximum(0.0,  F_s)
-
     A_p[i_int, j_int] = (
         A_w[i_int, j_int] + A_e[i_int, j_int] +
         A_n[i_int, j_int] + A_s[i_int, j_int] +
         (F_e - F_w) + (F_n - F_s)
     )
-
     # pressure source terms (interior)
     p_w = p[i_int, slice(1, n_x - 1)]
     p_e = p[i_int, slice(3, n_x + 1)]
     p_s = p[slice(1, n_y - 1), j_int]
     p_n = p[slice(3, n_y + 1), j_int]
-
     source_x[i_int, j_int] = 0.5 * (p_w - p_e) * dx
     source_y[i_int, j_int] = 0.5 * (p_n - p_s) * dy
 
-    # -------------------------------
-    # Boundaries (same logic as original; scalar loops)
-    # -------------------------------
-
+    # Boundary Values
     # left wall (j = 1)
     j = 1
     for i in range(2, n_y):
@@ -235,9 +203,67 @@ def momentum_link_coefficients(u_star, u_face, v_face, p, source_x, source_y,
 
     return A_p, A_e, A_w, A_n, A_s, source_x, source_y
 
-# ---------------------------------------------------------------------------
-# Iterative solver (Gauss–Seidel with under-relaxation)
-# ---------------------------------------------------------------------------
+
+def interpolate_solution_to_fine_grid(coarse_file, n_x_fine, n_y_fine):
+    # Load coarse solution
+    data = np.load(coarse_file)
+    u_coarse = data['u']
+    v_coarse = data['v']
+    p_coarse = data['p']
+    x_coarse = data['x']
+    y_coarse = data['y']
+
+    print(f"Loaded solution from {coarse_file}")
+    print(f"  Coarse grid: {u_coarse.shape[1]} x {u_coarse.shape[0]}")
+    print(f"  Fine grid: {n_x_fine} x {n_y_fine}")
+
+    # Create fine grid coordinates (interior only)
+    dx_fine = 1.0 / n_x_fine
+    dy_fine = 1.0 / n_y_fine
+    x_fine = np.linspace(dx_fine / 2, 1 - dx_fine / 2, n_x_fine)
+    y_fine = np.linspace(dy_fine / 2, 1 - dy_fine / 2, n_y_fine)
+
+    # Create interpolation functions using bicubic splines
+    # Note: y is first dimension (rows), x is second (columns)
+    interp_u = RectBivariateSpline(y_coarse, x_coarse, u_coarse, kx=3, ky=3)
+    interp_v = RectBivariateSpline(y_coarse, x_coarse, v_coarse, kx=3, ky=3)
+    interp_p = RectBivariateSpline(y_coarse, x_coarse, p_coarse, kx=3, ky=3)
+
+    # Interpolate to fine grid (interior)
+    u_fine_interior = interp_u(y_fine, x_fine)
+    v_fine_interior = interp_v(y_fine, x_fine)
+    p_fine_interior = interp_p(y_fine, x_fine)
+
+    # Create arrays with ghost cells
+    u_fine = np.zeros((n_y_fine + 2, n_x_fine + 2), dtype=np.float64)
+    v_fine = np.zeros((n_y_fine + 2, n_x_fine + 2), dtype=np.float64)
+    p_fine = np.zeros((n_y_fine + 2, n_x_fine + 2), dtype=np.float64)
+
+    # Fill interior cells
+    u_fine[1:-1, 1:-1] = u_fine_interior
+    v_fine[1:-1, 1:-1] = v_fine_interior
+    p_fine[1:-1, 1:-1] = p_fine_interior
+
+    # Apply boundary conditions
+    # Top wall: u = 1, v = 0
+    u_fine[0, 1:-1] = 1.0
+    v_fine[0, 1:-1] = 0.0
+    # Other walls: u = 0, v = 0 (no-slip)
+    u_fine[-1, 1:-1] = 0.0  # bottom
+    u_fine[1:-1, 0] = 0.0  # left
+    u_fine[1:-1, -1] = 0.0  # right
+    v_fine[-1, 1:-1] = 0.0  # bottom
+    v_fine[1:-1, 0] = 0.0  # left
+    v_fine[1:-1, -1] = 0.0  # right
+
+    print(f"Interpolation complete:")
+    print(f"  Max u: {np.abs(u_fine).max():.3e}")
+    print(f"  Max v: {np.abs(v_fine).max():.3e}")
+    print(f"  Max p: {np.abs(p_fine).max():.3e}")
+
+    return u_fine, v_fine, p_fine
+
+# Gauss-Seidel Solver function
 
 def solve(phi, phi_star, A_p, A_e, A_w, A_n, A_s, source,
           alpha, epsilon, max_inner_iteration, l2_norm_initial, omega):
@@ -280,49 +306,38 @@ def solve(phi, phi_star, A_p, A_e, A_w, A_n, A_s, source,
 
     return phi, norm_first
 
-# ---------------------------------------------------------------------------
-# Rhie–Chow face velocities (vectorized)
-# ---------------------------------------------------------------------------
-
+# Rhie-Chow Face Velocity Interpolation
 def face_velocity(u, v, u_face, v_face, p, A_p, alpha_uv):
 
-    # ============================================================
-    # U–FACE VELOCITIES (vectorized)
-    # ============================================================
+    # u-face interior nodes
+    i_u = slice(1, n_y+1)
 
-    # u-face interior: i = 1..n_y, j = 1..n_x-1
-    i_u = slice(1, n_y + 1)
-
-    # j ranges (non-overlapping, correct dimensionality)
-    j_u      = slice(1, n_x)         # j
-    j_u_r1   = slice(2, n_x + 1)     # j+1
-    j_u_l1   = slice(0, n_x - 1)     # j-1
-    j_u_r2   = slice(3, n_x + 2)     # j+2
-    j_u_l2   = slice(1, n_x)         # j (for (p[i,j+2]-p[i,j]))
+    # j ranges
+    j_u = slice(1, n_x)  # j
+    j_u_r1 = slice(2, n_x + 1)  # j+1
+    j_u_l1 = slice(0, n_x - 1)  # j-1
+    j_u_r2 = slice(3, n_x + 2)  # j+2
+    j_u_l2 = slice(1, n_x)  # j (for (p[i,j+2]-p[i,j]))
 
     # Compute u-face
     u_face[i_u, j_u] = (
-        0.5 * (u[i_u, j_u] + u[i_u, j_u_r1]) +
-        0.25 * alpha_uv * (p[i_u, j_u_l1] - p[i_u, j_u_r1]) * dy / A_p[i_u, j_u] +
-        0.25 * alpha_uv * (p[i_u, j_u_r2] - p[i_u, j_u_l2]) * dy / A_p[i_u, j_u_r1] -
-        0.5 * alpha_uv * (1.0 / A_p[i_u, j_u] + 1.0 / A_p[i_u, j_u_r1]) *
-        (p[i_u, j_u_r1] - p[i_u, j_u]) * dy
+            0.5 * (u[i_u, j_u] + u[i_u, j_u_r1]) +
+            0.25 * alpha_uv * (p[i_u, j_u_l1] - p[i_u, j_u_r1]) * dy / A_p[i_u, j_u] +
+            0.25 * alpha_uv * (p[i_u, j_u_r2] - p[i_u, j_u_l2]) * dy / A_p[i_u, j_u_r1] -
+            0.5 * alpha_uv * (1.0 / A_p[i_u, j_u] + 1.0 / A_p[i_u, j_u_r1]) *
+            (p[i_u, j_u_r1] - p[i_u, j_u]) * dy
     )
 
-    # ============================================================
-    # V–FACE VELOCITIES (vectorized)
-    # ============================================================
-
-    # v-face interior corresponds to (i-1, j) for i=2..n_y
+    # v-face interior nodes
     i_v_top    = slice(1, n_y)       # i-1
     i_v_bottom = slice(2, n_y + 1)   # i
-
     j_v = slice(1, n_x + 1)
 
     # vertical shifted stencils
     i_above = slice(0, n_y - 1)        # i-2
     i_below = slice(3, n_y + 2)        # i+1
 
+    # Compute v-face
     v_face[i_v_top, j_v] = (
         0.5 * (v[i_v_top, j_v] + v[i_v_bottom, j_v]) +
         0.25 * alpha_uv * (p[i_v_top, j_v] - p[i_below, j_v]) * dx / A_p[i_v_bottom, j_v] +
@@ -333,18 +348,15 @@ def face_velocity(u, v, u_face, v_face, p, A_p, alpha_uv):
 
     return u_face, v_face
 
-# ---------------------------------------------------------------------------
-# Pressure correction coefficients (vectorized interior)
-# ---------------------------------------------------------------------------
 
-def pressure_correction_link_coefficients(u, u_face, v_face,
+def pressure_correction_link_coefficients(u_face, v_face,
                                           Ap_p, Ap_e, Ap_w, Ap_n, Ap_s,
                                           source_p, A_p, A_e, A_w, A_n, A_s,
                                           alpha_uv):
 
     invA = 1.0 / A_p
 
-    # Interior: i=2..n_y-1, j=2..n_x-1
+    # Interior node slices
     i_int = slice(2, n_y)
     j_int = slice(2, n_x)
 
@@ -359,13 +371,12 @@ def pressure_correction_link_coefficients(u, u_face, v_face,
     Ap_w[i_int, j_int] = 0.5 * alpha_uv * (invA[i_int, j_int] + invA[i_int, j_l]) * dy ** 2
     Ap_n[i_int, j_int] = 0.5 * alpha_uv * (invA[i_int, j_int] + invA[i_u, j_int]) * dx ** 2
     Ap_s[i_int, j_int] = 0.5 * alpha_uv * (invA[i_int, j_int] + invA[i_d, j_int]) * dx ** 2
-
     Ap_p[i_int, j_int] = (
             Ap_e[i_int, j_int] + Ap_w[i_int, j_int]
             + Ap_n[i_int, j_int] + Ap_s[i_int, j_int]
     )
 
-    # Divergence
+# Divergence
     source_p[i_int, j_int] = (
             -(u_face[i_int, j_int] - u_face[i_int, j_l]) * dy
             - (v_face[i_u, j_int] - v_face[i_int, j_int]) * dx
@@ -379,7 +390,6 @@ def pressure_correction_link_coefficients(u, u_face, v_face,
         Ap_n[i, j] = 0.0
         Ap_s[i, j] = 0.5 * alpha_uv * (invA[i, j] + invA[i + 1, j]) * (dx ** 2)
         Ap_p[i, j] = Ap_e[i, j] + Ap_w[i, j] + Ap_n[i, j] + Ap_s[i, j]
-
         source_p[i, j] = (
             -(u_face[i, j] - u_face[i, j - 1]) * dy -
             (v_face[i - 1, j] - v_face[i, j]) * dx
@@ -393,7 +403,6 @@ def pressure_correction_link_coefficients(u, u_face, v_face,
         Ap_n[i, j] = 0.5 * alpha_uv * (invA[i, j] + invA[i - 1, j]) * (dx ** 2)
         Ap_s[i, j] = 0.5 * alpha_uv * (invA[i, j] + invA[i + 1, j]) * (dx ** 2)
         Ap_p[i, j] = Ap_e[i, j] + Ap_w[i, j] + Ap_n[i, j] + Ap_s[i, j]
-
         source_p[i, j] = (
             -(u_face[i, j] - u_face[i, j - 1]) * dy -
             (v_face[i - 1, j] - v_face[i, j]) * dx
@@ -407,7 +416,6 @@ def pressure_correction_link_coefficients(u, u_face, v_face,
         Ap_n[i, j] = 0.5 * alpha_uv * (invA[i, j] + invA[i - 1, j]) * (dx ** 2)
         Ap_s[i, j] = 0.5 * alpha_uv * (invA[i, j] + invA[i + 1, j]) * (dx ** 2)
         Ap_p[i, j] = Ap_e[i, j] + Ap_w[i, j] + Ap_n[i, j] + Ap_s[i, j]
-
         source_p[i, j] = (
             -(u_face[i, j] - u_face[i, j - 1]) * dy -
             (v_face[i - 1, j] - v_face[i, j]) * dx
@@ -421,13 +429,11 @@ def pressure_correction_link_coefficients(u, u_face, v_face,
         Ap_n[i, j] = 0.5 * alpha_uv * (invA[i, j] + invA[i - 1, j]) * (dx ** 2)
         Ap_s[i, j] = 0.0
         Ap_p[i, j] = Ap_e[i, j] + Ap_w[i, j] + Ap_n[i, j] + Ap_s[i, j]
-
         source_p[i, j] = (
             -(u_face[i, j] - u_face[i, j - 1]) * dy -
             (v_face[i - 1, j] - v_face[i, j]) * dx
         )
-
-    # Corners (same as your original)
+    # Corners
     # top left
     i = 1; j = 1
     Ap_e[i, j] = 0.5 * alpha_uv * (invA[i, j] + invA[i, j + 1]) * (dy ** 2)
@@ -478,21 +484,25 @@ def pressure_correction_link_coefficients(u, u_face, v_face,
 
     return Ap_p, Ap_e, Ap_w, Ap_n, Ap_s, source_p
 
-# ---------------------------------------------------------------------------
-# Pressure correction
-# ---------------------------------------------------------------------------
+def fix_pressure_reference(p_prime):
+    # Fix pressure at bottom-left interior point
+    p_ref = p_prime[n_y, 1]  # Store value at reference
+    p_prime[1:n_y+1, 1:n_x+1] -= p_ref  # Subtract from all interior
+    return p_prime
 
-def correct_pressure(p_star, p, p_prime, alpha_p):
+def correct_pressure(p, p_prime, alpha_p):
     p_star = p + alpha_p * p_prime
 
     # BCs for ghost cells
-
     # top wall
     p_star[0, 1:n_x + 1] = p_star[1, 1:n_x + 1]
+
     # left wall
     p_star[1:n_y + 1, 0] = p_star[1:n_y + 1, 1]
+
     # right wall
     p_star[1:n_y + 1, n_x + 1] = p_star[1:n_y + 1, n_x]
+
     # bottom wall
     p_star[n_y + 1, 1:n_x + 1] = p_star[n_y, 1:n_x + 1]
 
@@ -505,10 +515,6 @@ def correct_pressure(p_star, p, p_prime, alpha_p):
     ) / 3.0
 
     return p_star
-
-# ---------------------------------------------------------------------------
-# Correct cell-centered velocities
-# ---------------------------------------------------------------------------
 
 def correct_cell_center_velocity(u, v, u_star, v_star, p_prime, A_p, alpha_uv):
     # u velocity (interior)
@@ -555,9 +561,6 @@ def correct_cell_center_velocity(u, v, u_star, v_star, p_prime, A_p, alpha_uv):
 
     return u_star, v_star
 
-# ---------------------------------------------------------------------------
-# Correct face velocities with pressure correction
-# ---------------------------------------------------------------------------
 
 def correct_face_velocity(u_face, v_face, p_prime, A_p, alpha_uv):
     # u faces
@@ -576,220 +579,47 @@ def correct_face_velocity(u_face, v_face, p_prime, A_p, alpha_uv):
 
     return u_face, v_face
 
-# ---------------------------------------------------------------------------
-# Post-processing
-# ---------------------------------------------------------------------------
-
-def post_processing(u_star, v_star, p_star, X, Y, x, y):
-    # Extract only interior cells (remove ghost cells)
-    u_interior = u_star[1:n_y + 1, 1:n_x + 1]
-    v_interior = v_star[1:n_y + 1, 1:n_x + 1]
-    p_interior = p_star[1:n_y + 1, 1:n_x + 1]
-    x_interior = x[1:n_x + 1]  # Remove ghost cells
-    y_interior = y[1:n_y + 1]  # Remove ghost cells
-
-    # Create meshgrid for interior cells only
-    X_interior, Y_interior = np.meshgrid(x_interior, y_interior)
-
-    # u velocity contours
-    plt.figure(1)
-    plt.contourf(X_interior, Y_interior, np.flipud(u_interior), levels=50, cmap='jet')
-    plt.colorbar()
-    plt.title('U contours')
-    plt.xlabel('x')
-    plt.ylabel('y')
-    plt.show()
-
-    # v velocity contours
-    plt.figure(2)
-    plt.contourf(X_interior, Y_interior, np.flipud(v_interior), levels=50, cmap='jet')
-    plt.colorbar()
-    plt.title('V contours')
-    plt.xlabel('x')
-    plt.ylabel('y')
-    plt.show()
-
-    # pressure contours
-    plt.figure(3)
-    plt.contourf(X_interior, Y_interior, np.flipud(p_interior), levels=50, cmap='jet')
-    plt.colorbar()
-    plt.title('P contours')
-    plt.xlabel('x')
-    plt.ylabel('y')
-    plt.show()
-
-    # u centerline velocity
-    plt.figure(4)
-    plt.plot(1 - y_interior, u_interior[:, round(n_x / 2)])
-    plt.xlabel('y')
-    plt.ylabel('u')
-    plt.title('U centerline velocity')
-    plt.grid(True)
-    plt.show()
-
-    # v centerline velocity
-    plt.figure(5)
-    plt.plot(x_interior, v_interior[round(n_y / 2), :])
-    plt.xlabel('x')
-    plt.ylabel('v')
-    plt.title('V centerline velocity')
-    plt.grid(True)
-    plt.show()
-
-    # streamlines
-    plt.figure(6)
-    u_plot = np.flipud(u_interior)
-    v_plot = np.flipud(v_interior)
-    plt.streamplot(X_interior, Y_interior, u_plot, v_plot, density=1.8, linewidth=1, arrowsize=1)
-    plt.title('Streamlines')
-    plt.xlabel('x')
-    plt.ylabel('y')
-    plt.savefig(f'{n_x}x{n_y}_A4_v5_v4_results.png', dpi=150)
-    plt.show()
-
-def fix_pressure_reference(p_prime):
-    """
-    Fix pressure at reference point to remove null space.
-    For lid-driven cavity, typically fix at a corner.
-    """
-    # Fix pressure at bottom-left interior point
-    p_ref = p_prime[n_y, 1]  # Store value at reference
-    p_prime[1:n_y+1, 1:n_x+1] -= p_ref  # Subtract from all interior
-    return p_prime
 
 
-def get_relaxation_factors(n_iter, l2_norm_p, l2_norm_p_prev):
-    """Adaptive relaxation based on iteration count and convergence behavior"""
-
-    # Phase 1: Very conservative startup
-    if n_iter <= 10:
-        alpha_uv = 0.15
-        alpha_p = 0.045
-        omega_uv = 1.0
-        omega_p = 1.0
-
-    # Phase 2: Gradual increase
-    elif n_iter <= 80:
-        alpha_uv = 0.2
-        alpha_p = 0.8
-        omega_uv = 1.0
-        omega_p = 1.05
-
-    # Phase 3: Target values with monitoring
-    else:
-        alpha_uv = 0.3
-        alpha_p = 0.125
-        omega_uv = 1.1
-        omega_p = 1.15
-
-        # Safety overrides
-        if max_div > 1e-5:  # Divergence too large
-            alpha_uv *= 0.8
-            alpha_p *= 0.7
-            omega_uv = 1.0
-            omega_p = 1.0
-
-        if max_p > 20:  # Pressure growing too large
-            alpha_p *= 0.5
-
-        if l2_norm_p_prev > 0 and l2_norm_p > 2 * l2_norm_p_prev:
-            # Pressure correction diverging
-            alpha_uv *= 0.7
-            alpha_p *= 0.5
-
-    return alpha_uv, alpha_p, omega_uv, omega_p
 
 
-def interpolate_solution_to_fine_grid(coarse_file, n_x_fine, n_y_fine):
-    """
-    Load coarse grid solution and interpolate to fine grid.
-    Returns initialized arrays for u, v, p with ghost cells.
-    """
-    # Load coarse solution
-    data = np.load(coarse_file)
-    u_coarse = data['u']
-    v_coarse = data['v']
-    p_coarse = data['p']
-    x_coarse = data['x']
-    y_coarse = data['y']
 
-    print(f"Loaded solution from {coarse_file}")
-    print(f"  Coarse grid: {u_coarse.shape[1]} x {u_coarse.shape[0]}")
-    print(f"  Fine grid: {n_x_fine} x {n_y_fine}")
+# Main creation
 
-    # Create fine grid coordinates (interior only)
-    dx_fine = 1.0 / n_x_fine
-    dy_fine = 1.0 / n_y_fine
-    x_fine = np.linspace(dx_fine / 2, 1 - dx_fine / 2, n_x_fine)
-    y_fine = np.linspace(dy_fine / 2, 1 - dy_fine / 2, n_y_fine)
+n_x = 257
+n_y = 257
+dx = 1.0 / n_x
+dy = 1.0 / n_y
+Re = 100
 
-    # Create interpolation functions using bicubic splines
-    # Note: y is first dimension (rows), x is second (columns)
-    interp_u = RectBivariateSpline(y_coarse, x_coarse, u_coarse, kx=3, ky=3)
-    interp_v = RectBivariateSpline(y_coarse, x_coarse, v_coarse, kx=3, ky=3)
-    interp_p = RectBivariateSpline(y_coarse, x_coarse, p_coarse, kx=3, ky=3)
+alpha_uv = 0.125
+alpha_p = 0.04
+dummy_alpha_p = 1.0 # Used in GS-SOR for alpha_p. Unrelaxed in GS part of solve()
+omega_uv = 1.0
+omega_p = 1.0
+epsilon_uv = 1e-4
+epsilon_p = 1e-7
+max_inner_iteration_uv = 100
+max_inner_iteration_p = 750
+max_outer_iteration = 3000
 
-    # Interpolate to fine grid (interior)
-    u_fine_interior = interp_u(y_fine, x_fine)
-    v_fine_interior = interp_v(y_fine, x_fine)
-    p_fine_interior = interp_p(y_fine, x_fine)
+l2_norm_x = 0.0
+l2_norm_y = 0.0
+l2_norm_p = 0.0
 
-    # Create arrays with ghost cells
-    u_fine = np.zeros((n_y_fine + 2, n_x_fine + 2), dtype=np.float64)
-    v_fine = np.zeros((n_y_fine + 2, n_x_fine + 2), dtype=np.float64)
-    p_fine = np.zeros((n_y_fine + 2, n_x_fine + 2), dtype=np.float64)
-
-    # Fill interior cells
-    u_fine[1:-1, 1:-1] = u_fine_interior
-    v_fine[1:-1, 1:-1] = v_fine_interior
-    p_fine[1:-1, 1:-1] = p_fine_interior
-
-    # Apply boundary conditions
-    # Top wall: u = 1, v = 0
-    u_fine[0, 1:-1] = 1.0
-    v_fine[0, 1:-1] = 0.0
-
-    # Other walls: u = 0, v = 0 (no-slip)
-    u_fine[-1, 1:-1] = 0.0  # bottom
-    u_fine[1:-1, 0] = 0.0  # left
-    u_fine[1:-1, -1] = 0.0  # right
-
-    v_fine[-1, 1:-1] = 0.0  # bottom
-    v_fine[1:-1, 0] = 0.0  # left
-    v_fine[1:-1, -1] = 0.0  # right
-
-    print(f"Interpolation complete:")
-    print(f"  Max u: {np.abs(u_fine).max():.3e}")
-    print(f"  Max v: {np.abs(v_fine).max():.3e}")
-    print(f"  Max p: {np.abs(p_fine).max():.3e}")
-
-    return u_fine, v_fine, p_fine
-
-
-# ---------------------------------------------------------------------------
-# MAIN SETUP
-# ---------------------------------------------------------------------------
-
-# Primitive variables (with ghost cells)
 if os.path.exists('solution_65x65.npz'):
-    print("=" * 70)
-    print("INITIALIZING FROM COARSE GRID SOLUTION")
-    print("=" * 70)
-
-    # Interpolate coarse solution to fine grid
+    print(f'Coarse file found. Interpolating for Initial Guess')
+    # Interpolate coarse grid solution to this finer grid
+    # Only interpolate the cell velocities, face vels will be computer in first iteration
     u, v, p = interpolate_solution_to_fine_grid('solution_65x65.npz', n_x, n_y)
 
-    # Also initialize u_star, v_star, p_star
+    # Initialize u_star, v_star, p_star
     u_star = np.copy(u)
     v_star = np.copy(v)
     p_star = np.copy(p)
 
-    # Face velocities will be computed in first iteration
-    # No need to interpolate them
-
 else:
-    print("No coarse solution found. Starting from zero initial guess.")
-    # Your existing initialization (all zeros)
+    print(f"Initial Guess of Zero")
     u = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
     v = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
     p = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
@@ -801,6 +631,8 @@ else:
     # Lid boundary condition
     u[0, 1:n_x + 1] = 1.0
     u_star[0, 1:n_x + 1] = 1.0
+
+# arrays that need to be initialized no matter what
 
 p_prime = np.zeros((n_y + 2, n_x + 2), dtype=np.float64)
 
@@ -844,93 +676,67 @@ u[0, 1:n_x + 1] = 1.0
 u_star[0, 1:n_x + 1] = 1.0
 u_face[0, 1:n_x] = 1.0
 
-# Solver parameters
-l2_norm_x = 0.0
-l2_norm_y = 0.0
-l2_norm_p = 0.0
-
-alpha_uv = 0.125 # prev 0.25, 0.7
-epsilon_uv = 1e-4
-max_inner_iteration_uv = 100
-omega_uv = 1.0
-
-max_inner_iteration_p = 750
-dummy_alpha_p = 1.0
-epsilon_p = 1e-7
-alpha_p = 0.04 # prev 0.1, 0.3
-omega_p = 1.0
-
-max_outer_iteration = 3000
-
 time_start = time.time()
-# ---------------------------------------------------------------------------
-# SIMPLE outer loop
-# ---------------------------------------------------------------------------
 
+# SIMPLE Loop - steps from Section 1.10
 for n in range(1, max_outer_iteration + 1):
-
     iter_start = time.time()
     l2_norm_p_prev = l2_norm_p if n > 1 else 1.0
-    # alpha_uv, alpha_p, omega_uv, omega_p = get_relaxation_factors(n, l2_norm_p, l2_norm_p_prev)
 
-
+    # Steps 2: Convective coefficients and Source Terms
     A_p, A_e, A_w, A_n, A_s, source_x, source_y = momentum_link_coefficients(
         u_star, u_face, v_face, p, source_x, source_y, A_p, A_e, A_w, A_n, A_s
-    )
+        )
 
-    # Solve u-momentum
+    # Step 3: Solve discretized momentum equations
     u, l2_norm_x = solve(
-        u, u_star, A_p, A_e, A_w, A_n, A_s,
-        source_x, alpha_uv, epsilon_uv, max_inner_iteration_uv, l2_norm_x, omega_uv
-    )
+        u, u_star, A_p, A_e, A_w, A_n, A_s, source_x, alpha_uv, epsilon_uv,
+        max_inner_iteration_uv, l2_norm_x, omega_uv
+        )
 
-    # Solve v-momentum
     v, l2_norm_y = solve(
         v, v_star, A_p, A_e, A_w, A_n, A_s,
         source_y, alpha_uv, epsilon_uv, max_inner_iteration_uv, l2_norm_y, omega_uv
     )
 
-    # Rhie–Chow face velocities
+    # Step 4: Face Velocities
     u_face, v_face = face_velocity(u, v, u_face, v_face, p, A_p, alpha_uv)
 
-    # Pressure correction coefficients
+    # Step 5: Convective coefficients and Source Terms for pressure equations
     Ap_p, Ap_e, Ap_w, Ap_n, Ap_s, source_p = pressure_correction_link_coefficients(
-        u, u_face, v_face, Ap_p, Ap_e, Ap_w, Ap_n, Ap_s,
+        u_face, v_face, Ap_p, Ap_e, Ap_w, Ap_n, Ap_s,
         source_p, A_p, A_e, A_w, A_n, A_s, alpha_uv
     )
 
-    # Solve for pressure correction p'
+    # Step 6: Solve the discretized pressure correction equations
     p_prime, l2_norm_p = solve(
         p_prime, p_prime, Ap_p, Ap_e, Ap_w, Ap_n, Ap_s,
         source_p, dummy_alpha_p, epsilon_p, max_inner_iteration_p, l2_norm_p, omega_p
     )
+
+    # Step 7: Pressure Reference established
     p_prime = fix_pressure_reference(p_prime)
     p_mean = p[1:n_y + 1, 1:n_x + 1].mean()
     p[1:n_y + 1, 1:n_x + 1] -= p_mean
-    print("sum(source_p = ", np.sum(source_p))
-    # Correct pressure
-    p_star = correct_pressure(p_star, p, p_prime, alpha_p)
 
-    # Correct cell-centered velocities
+    # Step 8: Correct pressure and velocity fields
+    p_star = correct_pressure(p, p_prime, alpha_p)
     u_star, v_star = correct_cell_center_velocity(u, v, u_star, v_star, p_prime, A_p, alpha_uv)
 
-    # Correct face velocities with pressure correction
+    # Step 9: Correct face velocities
     u_face, v_face = correct_face_velocity(u_face, v_face, p_prime, A_p, alpha_uv)
 
-    # Update pressure for next SIMPLE iteration
+    # Step 10: Pressure Update + Convergence/Divergence Check
     p = np.copy(p_star)
-
-    iter_end = time.time()
-    print(f"Iter {n:4d}: l2_u = {l2_norm_x: .3e}, l2_v = {l2_norm_y: .3e}, l2_p = {l2_norm_p: .3e}, iter_time = {iter_end - iter_start:.3e}")
-
     max_div = np.abs(source_p[1:n_y + 1, 1:n_x + 1]).max()
     max_u = np.abs(u[1:n_y + 1, 1:n_x + 1]).max()
     max_v = np.abs(v[1:n_y + 1, 1:n_x + 1]).max()
     max_p = np.abs(p[1:n_y + 1, 1:n_x + 1]).max()
 
-
-    print(f"  Max div: {max_div:.3e}, Max u: {max_u:.3e}, "
-          f"Max v: {max_v:.3e}, Max p: {max_p:.3e}")
+    # Outputs to console for my own troubleshooting and to see progress lol
+    iter_end = time.time()
+    print(f"Iter {n:4d}: l2_u = {l2_norm_x: .3e}, l2_v = {l2_norm_y: .3e}, l2_p = {l2_norm_p: .3e}, iter_time = {iter_end - iter_start:.3e}")
+    print(f"  Max div: {max_div:.3e}, Max u: {max_u:.3e}, Max v: {max_v:.3e}, Max p: {max_p:.3e}")
 
     # Check for divergence
     if max_u > 10 or max_v > 10 or max_p > 1000:
@@ -941,9 +747,75 @@ for n in range(1, max_outer_iteration + 1):
         print("Converged!")
         break
 
-# ---------------------------------------------------------------------------
-# Post-processing
-# ---------------------------------------------------------------------------
 time_end = time.time()
 print(f'total elapsed time in seconds: {time_end - time_start:.1f}')
-post_processing(u_star, v_star, p_star, X, Y, x, y)
+
+# Post-processing
+# Extract only interior cells (remove ghost cells)
+u_interior = u_star[1:n_y + 1, 1:n_x + 1]
+v_interior = v_star[1:n_y + 1, 1:n_x + 1]
+p_interior = p_star[1:n_y + 1, 1:n_x + 1]
+x_interior = x[1:n_x + 1]  # Remove ghost cells
+y_interior = y[1:n_y + 1]  # Remove ghost cells
+
+# Create meshgrid for interior cells only
+X_interior, Y_interior = np.meshgrid(x_interior, y_interior)
+
+# u velocity contours
+plt.figure(1)
+plt.contourf(X_interior, Y_interior, np.flipud(u_interior), levels=50, cmap='jet')
+plt.colorbar()
+plt.title('U contours')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.show()
+
+# v velocity contours
+plt.figure(2)
+plt.contourf(X_interior, Y_interior, np.flipud(v_interior), levels=50, cmap='jet')
+plt.colorbar()
+plt.title('V contours')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.show()
+
+# pressure contours
+plt.figure(3)
+plt.contourf(X_interior, Y_interior, np.flipud(p_interior), levels=50, cmap='jet')
+plt.colorbar()
+plt.title('P contours')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.show()
+
+# u centerline velocity
+plt.figure(4)
+plt.plot(1 - y_interior, u_interior[:, round(n_x / 2)])
+plt.xlabel('y')
+plt.ylabel('u')
+plt.title('U centerline velocity')
+plt.grid(True)
+plt.show()
+
+# v centerline velocity
+plt.figure(5)
+plt.plot(x_interior, v_interior[round(n_y / 2), :])
+plt.xlabel('x')
+plt.ylabel('v')
+plt.title('V centerline velocity')
+plt.grid(True)
+plt.show()
+
+# streamlines
+plt.figure(6)
+u_plot = np.flipud(u_interior)
+v_plot = np.flipud(v_interior)
+plt.streamplot(X_interior, Y_interior, u_plot, v_plot, density=1.8, linewidth=1, arrowsize=1)
+plt.title('Streamlines')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.savefig(f'{n_x}x{n_y}_A4_v5_v4_results.png', dpi=150)
+plt.show()
+
+
+
