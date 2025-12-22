@@ -693,7 +693,6 @@ for n in range(1, max_outer_iteration + 1):
         u, u_star, A_p, A_e, A_w, A_n, A_s, source_x, alpha_uv, epsilon_uv,
         max_inner_iteration_uv, l2_norm_x, omega_uv
         )
-
     v, l2_norm_y = solve(
         v, v_star, A_p, A_e, A_w, A_n, A_s,
         source_y, alpha_uv, epsilon_uv, max_inner_iteration_uv, l2_norm_y, omega_uv
